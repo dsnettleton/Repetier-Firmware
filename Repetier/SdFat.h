@@ -19,14 +19,14 @@
  */
 /* Arduino SdFat Library
  * Copyright (C) 2012 by William Greiman
- *  
+ *
  * This file is part of the Arduino SdFat Library
- *  
- * This Library is free software: you can redistribute it and/or modify 
- * it under the terms of the GNU General Public License as published by 
+ *
+ * This Library is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * This Library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -110,7 +110,7 @@ limited RAM.
 \section Hardware Hardware Configuration
 
 %SdFat was developed using an
-<A HREF = "http://www.adafruit.com/"> Adafruit Industries</A> 
+<A HREF = "http://www.adafruit.com/"> Adafruit Industries</A>
 <A HREF = "http://www.ladyada.net/make/waveshield/"> Wave Shield</A>.
 
 The hardware interface to the SD card should not use a resistor based level
@@ -124,7 +124,7 @@ uses a 74AHC125N.  Gravitech sells SD and MicroSD Card Adapters based on the
 74LCX245.
 
 If you are using a resistor based level shifter and are having problems try
-setting the SPI bus frequency to 4 MHz.  This can be done by using 
+setting the SPI bus frequency to 4 MHz.  This can be done by using
 card.init(SPI_HALF_SPEED) to initialize the SD card.
 
 \section comment Bugs and Comments
@@ -241,9 +241,9 @@ http://www.sdcard.org/developers/tech/sdcard/pls/Simplified_Physical_Layer_Spec.
 The ATmega328 datasheet:
 
 http://www.atmel.com/dyn/resources/prod_documents/doc8161.pdf
- 
 
- */  
+
+ */
 #ifndef SdFat_h
 #define SdFat_h
 /**
@@ -252,7 +252,7 @@ http://www.atmel.com/dyn/resources/prod_documents/doc8161.pdf
  */
 //------------------------------------------------------------------------------
 /** SdFat version YYYYMMDD */
-#define SD_FAT_VERSION 20120719
+#define SD_FAT_VERSION 20130629
 //------------------------------------------------------------------------------
 /** error if old IDE */
 #if !defined(ARDUINO) || ARDUINO < 100
@@ -363,7 +363,7 @@ typedef struct CID {
   unsigned char always1 : 1;
   /** CRC7 checksum */
   unsigned char crc : 7;
-}cid_t;
+}__attribute__((packed)) cid_t;
 //------------------------------------------------------------------------------
 /** CSD for version 1.00 cards */
 typedef struct CSDV1 {
@@ -425,7 +425,7 @@ typedef struct CSDV1 {
   // byte 15
   unsigned char always1 : 1;
   unsigned char crc : 7;
-}csd1_t;
+}__attribute__((packed)) csd1_t;
 //------------------------------------------------------------------------------
 /** CSD for version 2.00 cards */
 typedef struct CSDV2 {
@@ -507,7 +507,7 @@ typedef struct CSDV2 {
   unsigned char always1 : 1;
   /** checksum */
   unsigned char crc : 7;
-}csd2_t;
+}__attribute__((packed)) csd2_t;
 //------------------------------------------------------------------------------
 /** union of old and new style CSD register */
 union csd_t {
@@ -523,7 +523,7 @@ union csd_t {
  *
  * Set USE_SD_CRC to 2 to used a larger faster table driven CRC-CCITT function.
  */
-#define USE_SD_CRC 0
+#define USE_SD_CRC 2
 //------------------------------------------------------------------------------
 /**
  * To use multiple SD cards set USE_MULTIPLE_CARDS nonzero.
@@ -533,6 +533,60 @@ union csd_t {
  * Each card requires about 550 bytes of SRAM so use of a Mega is recommended.
  */
 #define USE_MULTIPLE_CARDS 0
+//------------------------------------------------------------------------------
+/**
+ * Set DESTRUCTOR_CLOSES_FILE nonzero to close a file in its destructor.
+ *
+ * Causes use of lots of heap in ARM.
+ */
+#define DESTRUCTOR_CLOSES_FILE 0
+//------------------------------------------------------------------------------
+
+/**
+ * Set USE_SEPARATE_FAT_CACHE nonzero to use a second 512 byte cache
+ * for FAT table entries.  Improves performance for large writes that
+ * are not a multiple of 512 bytes.
+ */
+#ifdef __arm__
+#define USE_SEPARATE_FAT_CACHE 1
+#else  // __arm__
+#define USE_SEPARATE_FAT_CACHE 0
+#endif  // __arm__
+//------------------------------------------------------------------------------
+/**
+ * Don't use mult-block read/write on small AVR boards
+ */
+#if defined(RAMEND) && (RAMEND < 3000 || (NONLINEAR_SYSTEM && RAMEND<8000))
+#define USE_MULTI_BLOCK_SD_IO 0
+#else
+#define USE_MULTI_BLOCK_SD_IO 1
+#endif
+//------------------------------------------------------------------------------
+/**
+ *  Force use of Arduino Standard SPI library if USE_ARDUINO_SPI_LIBRARY
+ * is nonzero.
+ */
+#define USE_ARDUINO_SPI_LIBRARY 0
+
+//------------------------------------------------------------------------------
+
+/**
+ * Use native SPI on Teensy 3.0 if USE_NATIVE_MK20DX128-SPI is nonzero.
+ */
+#if defined(__arm__) && defined(CORE_TEENSY)
+#define USE_NATIVE_MK20DX128_SPI 1
+#else
+#define USE_NATIVE_MK20DX128_SPI 0
+#endif
+//------------------------------------------------------------------------------
+/**
+ * Use fast SAM3X SPI library if USE_NATIVE_SAM3X_SPI is nonzero.
+ */
+#if defined(__arm__) && !defined(CORE_TEENSY)
+#define USE_NATIVE_SAM3X_SPI 1
+#else
+#define USE_NATIVE_SAM3X_SPI 0
+#endif
 //------------------------------------------------------------------------------
 /**
  * Set nonzero to use Serial (the HardwareSerial class) for error messages
@@ -569,7 +623,7 @@ union csd_t {
 /**
  * Allow use of deprecated functions if ALLOW_DEPRECATED_FUNCTIONS is nonzero
  */
-#define ALLOW_DEPRECATED_FUNCTIONS 1
+#define ALLOW_DEPRECATED_FUNCTIONS 0
 //------------------------------------------------------------------------------
 /**
  * Allow FAT12 volumes if FAT12_SUPPORT is nonzero.
@@ -578,10 +632,10 @@ union csd_t {
 #define FAT12_SUPPORT 0
 //------------------------------------------------------------------------------
 /**
- * SPI init rate for SD initialization commands. Must be 5 (F_CPU/64)
- * or 6 (F_CPU/128).
+ * SPI init rate for SD initialization commands. Must be 10 (F_CPU/64)
+ * or greater
  */
-#define SPI_SD_INIT_RATE 5
+#define SPI_SD_INIT_RATE 11
 //------------------------------------------------------------------------------
 /**
  * Set the SS pin high for hardware SPI.  If SS is chip select for another SPI
@@ -628,14 +682,20 @@ uint8_t const SOFT_SPI_SCK_PIN = 13;
 // SPI speed is F_CPU/2^(1 + index), 0 <= index <= 6
 /** Set SCK to max rate of F_CPU/2. See Sd2Card::setSckRate(). */
 uint8_t const SPI_FULL_SPEED = 0;
+/** Set SCK rate to F_CPU/3 for Due */
+uint8_t const SPI_DIV3_SPEED = 1;
 /** Set SCK rate to F_CPU/4. See Sd2Card::setSckRate(). */
-uint8_t const SPI_HALF_SPEED = 1;
+uint8_t const SPI_HALF_SPEED = 2;
+/** Set SCK rate to F_CPU/6 for Due */
+uint8_t const SPI_DIV6_SPEED = 3;
 /** Set SCK rate to F_CPU/8. See Sd2Card::setSckRate(). */
-uint8_t const SPI_QUARTER_SPEED = 2;
+uint8_t const SPI_QUARTER_SPEED = 4;
 /** Set SCK rate to F_CPU/16. See Sd2Card::setSckRate(). */
-uint8_t const SPI_EIGHTH_SPEED = 3;
+uint8_t const SPI_EIGHTH_SPEED = 6;
 /** Set SCK rate to F_CPU/32. See Sd2Card::setSckRate(). */
-uint8_t const SPI_SIXTEENTH_SPEED = 4;
+uint8_t const SPI_SIXTEENTH_SPEED = 8;
+/** MAX rate test - see spiInit for a given chip for details */
+const uint8_t MAX_SCK_RATE_ID = 14;
 //------------------------------------------------------------------------------
 /** init timeout ms */
 uint16_t const SD_INIT_TIMEOUT = 2000;
@@ -701,6 +761,8 @@ uint8_t const SD_CARD_ERROR_INIT_NOT_CALLED = 0X19;
 uint8_t const SD_CARD_ERROR_CMD59 = 0X1A;
 /** invalid read CRC */
 uint8_t const SD_CARD_ERROR_READ_CRC = 0X1B;
+/** SPI DMA error */
+uint8_t const SD_CARD_ERROR_SPI_DMA = 0X1C;
 //------------------------------------------------------------------------------
 // card types
 /** Standard capacity V1 SD card */
@@ -766,7 +828,7 @@ class Sd2Card {
   /**
    * Read a card's CID register. The CID contains card identification
    * information such as Manufacturer ID, Product name, Product serial
-   * number and Manufacturing date. 
+   * number and Manufacturing date.
    *
    * \param[out] cid pointer to area for returned data.
    *
@@ -812,7 +874,7 @@ class Sd2Card {
     return cardCommand(cmd, arg);
   }
   uint8_t cardCommand(uint8_t cmd, uint32_t arg);
-  bool readData(uint8_t* dst, uint16_t count);
+  bool readData(uint8_t* dst, size_t count);
   bool readRegister(uint8_t cmd, void* buf);
   void chipSelectHigh();
   void chipSelectLow();
@@ -894,7 +956,7 @@ struct partitionTable {
   uint32_t firstSector;
            /** Length of the partition, in blocks. */
   uint32_t totalSectors;
-};
+} PACK;
 /** Type name for partitionTable */
 typedef struct partitionTable part_t;
 //------------------------------------------------------------------------------
@@ -918,7 +980,7 @@ struct masterBootRecord {
   uint8_t  mbrSig0;
            /** Second MBR signature byte. Must be 0XAA */
   uint8_t  mbrSig1;
-};
+} PACK;
 /** Type name for masterBootRecord */
 typedef struct masterBootRecord mbr_t;
 //------------------------------------------------------------------------------
@@ -1046,7 +1108,7 @@ struct fat_boot {
   uint8_t  bootSectorSig0;
            /** must be 0XAA */
   uint8_t  bootSectorSig1;
-};
+} PACK;
 /** Type name for FAT Boot Sector */
 typedef struct fat_boot fat_boot_t;
 //------------------------------------------------------------------------------
@@ -1200,7 +1262,7 @@ struct fat32_boot {
   uint8_t  bootSectorSig0;
            /** must be 0XAA */
   uint8_t  bootSectorSig1;
-};
+} PACK;
 /** Type name for FAT32 Boot Sector */
 typedef struct fat32_boot fat32_boot_t;
 //------------------------------------------------------------------------------
@@ -1240,7 +1302,7 @@ struct fat32_fsinfo {
   uint8_t  reserved2[12];
            /** must be 0X00, 0X00, 0X55, 0XAA */
   uint8_t  tailSignature[4];
-};
+} PACK;
 /** Type name for FAT32 FSINFO Sector */
 typedef struct fat32_fsinfo fat32_fsinfo_t;
 //------------------------------------------------------------------------------
@@ -1259,35 +1321,38 @@ uint32_t const FAT32EOC = 0X0FFFFFFF;
 uint32_t const FAT32EOC_MIN = 0X0FFFFFF8;
 /** Mask a for FAT32 entry. Entries are 28 bits. */
 uint32_t const FAT32MASK = 0X0FFFFFFF;
+
+// Reuse directory entries from deleted files
+#define SD_CARD_REUSE_FAT_ENTRIES true
 //------------------------------------------------------------------------------
 /**
  * \struct directoryEntry
  * \brief FAT short directory entry
  *
  * Short means short 8.3 name, not the entry size.
- *  
- * Date Format. A FAT directory entry date stamp is a 16-bit field that is 
+ *
+ * Date Format. A FAT directory entry date stamp is a 16-bit field that is
  * basically a date relative to the MS-DOS epoch of 01/01/1980. Here is the
- * format (bit 0 is the LSB of the 16-bit word, bit 15 is the MSB of the 
+ * format (bit 0 is the LSB of the 16-bit word, bit 15 is the MSB of the
  * 16-bit word):
- *   
- * Bits 9-15: Count of years from 1980, valid value range 0-127 
+ *
+ * Bits 9-15: Count of years from 1980, valid value range 0-127
  * inclusive (1980-2107).
- *   
+ *
  * Bits 5-8: Month of year, 1 = January, valid value range 1-12 inclusive.
  *
  * Bits 0-4: Day of month, valid value range 1-31 inclusive.
  *
  * Time Format. A FAT directory entry time stamp is a 16-bit field that has
- * a granularity of 2 seconds. Here is the format (bit 0 is the LSB of the 
+ * a granularity of 2 seconds. Here is the format (bit 0 is the LSB of the
  * 16-bit word, bit 15 is the MSB of the 16-bit word).
- *   
+ *
  * Bits 11-15: Hours, valid value range 0-23 inclusive.
- * 
+ *
  * Bits 5-10: Minutes, valid value range 0-59 inclusive.
- *      
+ *
  * Bits 0-4: 2-second count, valid value range 0-29 inclusive (0 - 58 seconds).
- *   
+ *
  * The valid time range is from Midnight 00:00:00 to 23:59:58.
  */
 struct directoryEntry {
@@ -1338,7 +1403,34 @@ struct directoryEntry {
   uint16_t firstClusterLow;
            /** 32-bit unsigned holding this file's size in bytes. */
   uint32_t fileSize;
-};
+} PACK;
+
+// LONG FILENAME FAT ENTRY
+struct directoryVFATEntry {
+  /**
+   * Sequence number. Consists of 2 parts:
+   *  bit 6:   indicates first long filename block for the next file
+   *  bit 0-4: the position of this long filename block (first block is 1)
+   */
+  uint8_t  sequenceNumber;
+  /** First set of UTF-16 characters */
+  uint16_t name1[5];//UTF-16
+  /** attributes (at the same location as in directoryEntry), always 0x0F */
+  uint8_t  attributes;
+  /** Reserved for use by Windows NT. Always 0. */
+  uint8_t  reservedNT;
+  /** Checksum of the short 8.3 filename, can be used to checked if the file system as modified by a not-long-filename aware implementation. */
+  uint8_t  checksum;
+  /** Second set of UTF-16 characters */
+  uint16_t name2[6];//UTF-16
+  /** firstClusterLow is always zero for longFilenames */
+  uint16_t firstClusterLow;
+  /** Third set of UTF-16 characters */
+  uint16_t name3[2];//UTF-16
+} PACK;
+typedef struct directoryVFATEntry vfat_t;
+
+
 //------------------------------------------------------------------------------
 // Definitions for directory entries
 //
@@ -1426,7 +1518,7 @@ union cache_t {
   fat32_boot_t fbs32;
            /** Used to access to a cached FAT32 FSINFO sector. */
   fat32_fsinfo_t fsinfo;
-};
+} PACK;
 //------------------------------------------------------------------------------
 /**
  * \class SdVolume
@@ -1441,7 +1533,7 @@ class SdVolume {
    * \return A pointer to the cache buffer or zero if an error occurs.
    */
   cache_t* cacheClear() {
-    if (!cacheFlush()) return 0;
+    if (!cacheSync()) return 0;
     cacheBlockNumber_ = 0XFFFFFFFF;
     return &cacheBuffer_;
   }
@@ -1496,25 +1588,7 @@ class SdVolume {
  private:
   // Allow SdBaseFile access to SdVolume private data.
   friend class SdBaseFile;
-
-  // value for dirty argument in cacheRawBlock to indicate read from cache
-  static bool const CACHE_FOR_READ = false;
-  // value for dirty argument in cacheRawBlock to indicate write to cache
-  static bool const CACHE_FOR_WRITE = true;
-
-#if USE_MULTIPLE_CARDS
-  cache_t cacheBuffer_;        // 512 byte cache for device blocks
-  uint32_t cacheBlockNumber_;  // Logical number of block in the cache
-  Sd2Card* sdCard_;            // Sd2Card object for cache
-  bool cacheDirty_;            // cacheFlush() will write block if true
-  uint32_t cacheMirrorBlock_;  // block number for mirror FAT
-#else  // USE_MULTIPLE_CARDS
-  static cache_t cacheBuffer_;        // 512 byte cache for device blocks
-  static uint32_t cacheBlockNumber_;  // Logical number of block in the cache
-  static Sd2Card* sdCard_;            // Sd2Card object for cache
-  static bool cacheDirty_;            // cacheFlush() will write block if true
-  static uint32_t cacheMirrorBlock_;  // block number for mirror FAT
-#endif  // USE_MULTIPLE_CARDS
+//------------------------------------------------------------------------------
   uint32_t allocSearchStart_;   // start cluster for alloc search
   uint8_t blocksPerCluster_;    // cluster size in blocks
   uint32_t blocksPerFat_;       // FAT size in blocks
@@ -1526,28 +1600,70 @@ class SdVolume {
   uint8_t fatType_;             // volume type (12, 16, OR 32)
   uint16_t rootDirEntryCount_;  // number of entries in FAT16 root dir
   uint32_t rootDirStart_;       // root start block for FAT16, cluster for FAT32
-  //----------------------------------------------------------------------------
+//------------------------------------------------------------------------------
+// block caches
+// use of static functions save a bit of flash - maybe not worth complexity
+//
+  static const uint8_t CACHE_STATUS_DIRTY = 1;
+  static const uint8_t CACHE_STATUS_FAT_BLOCK = 2;
+  static const uint8_t CACHE_STATUS_MASK
+     = CACHE_STATUS_DIRTY | CACHE_STATUS_FAT_BLOCK;
+  static const uint8_t CACHE_OPTION_NO_READ = 4;
+  // value for option argument in cacheFetch to indicate read from cache
+  static uint8_t const CACHE_FOR_READ = 0;
+  // value for option argument in cacheFetch to indicate write to cache
+  static uint8_t const CACHE_FOR_WRITE = CACHE_STATUS_DIRTY;
+  // reserve cache block with no read
+  static uint8_t const CACHE_RESERVE_FOR_WRITE
+     = CACHE_STATUS_DIRTY | CACHE_OPTION_NO_READ;
+#if USE_MULTIPLE_CARDS
+  cache_t cacheBuffer_;        // 512 byte cache for device blocks
+  uint32_t cacheBlockNumber_;  // Logical number of block in the cache
+  uint32_t cacheFatOffset_;    // offset for mirrored FAT
+  Sd2Card* sdCard_;            // Sd2Card object for cache
+  uint8_t cacheStatus_;        // status of cache block
+#if USE_SEPARATE_FAT_CACHE
+  cache_t cacheFatBuffer_;       // 512 byte cache for FAT
+  uint32_t cacheFatBlockNumber_;  // current Fat block number
+  uint8_t  cacheFatStatus_;       // status of cache Fatblock
+#endif  // USE_SEPARATE_FAT_CACHE
+#else  // USE_MULTIPLE_CARDS
+  static cache_t cacheBuffer_;        // 512 byte cache for device blocks
+  static uint32_t cacheBlockNumber_;  // Logical number of block in the cache
+  static uint32_t cacheFatOffset_;    // offset for mirrored FAT
+  static uint8_t cacheStatus_;        // status of cache block
+#if USE_SEPARATE_FAT_CACHE
+  static cache_t cacheFatBuffer_;       // 512 byte cache for FAT
+  static uint32_t cacheFatBlockNumber_;  // current Fat block number
+  static uint8_t  cacheFatStatus_;       // status of cache Fatblock
+#endif  // USE_SEPARATE_FAT_CACHE
+  static Sd2Card* sdCard_;            // Sd2Card object for cache
+#endif  // USE_MULTIPLE_CARDS
+
+  cache_t *cacheAddress() {return &cacheBuffer_;}
+  uint32_t cacheBlockNumber() {return cacheBlockNumber_;}
+#if USE_MULTIPLE_CARDS
+  cache_t* cacheFetch(uint32_t blockNumber, uint8_t options);
+  cache_t* cacheFetchData(uint32_t blockNumber, uint8_t options);
+  cache_t* cacheFetchFat(uint32_t blockNumber, uint8_t options);
+  void cacheInvalidate();
+  bool cacheSync();
+  bool cacheWriteData();
+  bool cacheWriteFat();
+#else  // USE_MULTIPLE_CARDS
+  static cache_t* cacheFetch(uint32_t blockNumber, uint8_t options);
+  static cache_t* cacheFetchData(uint32_t blockNumber, uint8_t options);
+  static cache_t* cacheFetchFat(uint32_t blockNumber, uint8_t options);
+  static void cacheInvalidate();
+  static bool cacheSync();
+  static bool cacheWriteData();
+  static bool cacheWriteFat();
+#endif  // USE_MULTIPLE_CARDS
+//------------------------------------------------------------------------------
   bool allocContiguous(uint32_t count, uint32_t* curCluster);
   uint8_t blockOfCluster(uint32_t position) const {
           return (position >> 9) & (blocksPerCluster_ - 1);}
-  uint32_t clusterStartBlock(uint32_t cluster) const {
-           return dataStartBlock_ + ((cluster - 2) << clusterSizeShift_);}
-  cache_t *cache() {return &cacheBuffer_;}
-  uint32_t cacheBlockNumber() {return cacheBlockNumber_;}
-#if USE_MULTIPLE_CARDS
-  bool cacheFlush();
-  bool cacheRawBlock(uint32_t blockNumber, bool dirty);
-#else  // USE_MULTIPLE_CARDS
-  static bool cacheFlush();
-  static bool cacheRawBlock(uint32_t blockNumber, bool dirty);
-#endif  // USE_MULTIPLE_CARDS
-  // used by SdBaseFile write to assign cache to SD location
-  void cacheSetBlockNumber(uint32_t blockNumber, bool dirty) {
-    cacheDirty_ = dirty;
-    cacheBlockNumber_  = blockNumber;
-  }
-  void cacheSetDirty() {cacheDirty_ |= CACHE_FOR_WRITE;}
-  bool chainSize(uint32_t beginCluster, uint32_t* size);
+  uint32_t clusterStartBlock(uint32_t cluster) const;
   bool fatGet(uint32_t cluster, uint32_t* value);
   bool fatPut(uint32_t cluster, uint32_t value);
   bool fatPutEOC(uint32_t cluster) {
@@ -1587,16 +1703,16 @@ class SdVolume {
 
 //------------------------------------------------------------------------------
 /**
- * \struct fpos_t
+ * \struct FatPos_t
  * \brief internal type for istream
  * do not use in user apps
  */
-struct fpos_t {
+struct FatPos_t {
   /** stream position */
   uint32_t position;
   /** cluster for position */
   uint32_t cluster;
-  fpos_t() : position(0), cluster(0) {}
+  FatPos_t() : position(0), cluster(0) {}
 };
 
 // use the gnu style oflag in open()
@@ -1740,7 +1856,9 @@ class SdBaseFile {
   /** Create an instance. */
   SdBaseFile() : writeError(false), type_(FAT_FILE_TYPE_CLOSED) {}
   SdBaseFile(const char* path, uint8_t oflag);
+  #if DESTRUCTOR_CLOSES_FILE
   ~SdBaseFile() {if(isOpen()) close();}
+  #endif
   /**
    * writeError is set to true if an error occurs during a write().
    * Set writeError to false before calling print() and/or write() and check
@@ -1756,12 +1874,14 @@ class SdBaseFile {
   /** get position for streams
    * \param[out] pos struct to receive position
    */
-  void getpos(fpos_t* pos);
+  void getpos(FatPos_t* pos);
   /** set position for streams
    * \param[out] pos struct with value for new position
    */
-  void setpos(fpos_t* pos);
+  void setpos(FatPos_t* pos);
   //----------------------------------------------------------------------------
+  /** \return number of bytes available from yhe current position to EOF */
+  uint32_t available() {return fileSize() - curPosition();}
   bool close();
   bool contiguousRange(uint32_t* bgnBlock, uint32_t* endBlock);
   bool createContiguous(SdBaseFile* dirFile,
@@ -1814,6 +1934,10 @@ class SdBaseFile {
   /** \return The first cluster number for a file or directory. */
   uint32_t firstCluster() const {return firstCluster_;}
   bool getFilename(char* name);
+  uint8_t lfn_checksum(const unsigned char *pFCBName);
+  bool openParentReturnFile(SdBaseFile* dirFile, const char* path, uint8_t *dname, SdBaseFile *newParent, boolean bMakeDirs);
+
+  
   /** \return True if this is a directory else false. */
   bool isDir() const {return type_ >= FAT_FILE_TYPE_MIN_DIR;}
   /** \return True if this is a normal file else false. */
@@ -1826,7 +1950,7 @@ class SdBaseFile {
   bool isRoot() const {
     return type_ == FAT_FILE_TYPE_ROOT_FIXED || type_ == FAT_FILE_TYPE_ROOT32;
   }
-  void ls(Print* pr, uint8_t flags = 0, uint8_t indent = 0);
+  void ls(uint8_t flags = 0, uint8_t indent = 0);
   void ls(uint8_t flags = 0);
   bool mkdir(SdBaseFile* dir, const char* path, bool pFlag = true);
   // alias for backward compactability
@@ -1838,18 +1962,21 @@ class SdBaseFile {
   bool open(const char* path, uint8_t oflag = O_READ);
   bool openNext(SdBaseFile* dirFile, uint8_t oflag);
   bool openRoot(SdVolume* vol);
+  int8_t readDir(dir_t& dir, char *longfilename) {return readDir(&dir, longfilename);}
   int peek();
-  bool printCreateDateTime(Print* pr);
+  bool printCreateDateTime();
   static void printFatDate(uint16_t fatDate);
-  static void printFatDate(Print* pr, uint16_t fatDate);
   static void printFatTime(uint16_t fatTime);
-  static void printFatTime(Print* pr, uint16_t fatTime);
-  bool printModifyDateTime(Print* pr);
+  bool printModifyDateTime();
+  int printField(int16_t value, char term);
+  int printField(uint16_t value, char term);
+  int printField(int32_t value, char term);
+  int printField(uint32_t value, char term);
   bool printName();
-  bool printName(Print* pr);
   int16_t read();
-  int16_t read(void* buf, uint16_t nbyte);
-  int8_t readDir(dir_t* dir);
+  int read(void* buf, size_t nbyte);
+  int8_t readDir(dir_t* dir, char *longfilename);
+
   static bool remove(SdBaseFile* dirFile, const char* path);
   bool remove();
   /** Set the file's current position to zero. */
@@ -1885,7 +2012,7 @@ class SdBaseFile {
   bool truncate(uint32_t size);
   /** \return SdVolume that contains this file. */
   SdVolume* volume() const {return vol_;}
-  int16_t write(const void* buf, uint16_t nbyte);
+  int write(const void* buf, size_t nbyte);
 //------------------------------------------------------------------------------
  public:
   // allow SdFat to set cwd_
@@ -1904,31 +2031,38 @@ class SdBaseFile {
   uint8_t   flags_;         // See above for definition of flags_ bits
   uint8_t   fstate_;        // error and eof indicator
   uint8_t   type_;          // type of file see above for values
+  uint8_t   dirIndex_;      // index of directory entry in dirBlock
+  SdVolume* vol_;           // volume where file is located
   uint32_t  curCluster_;    // cluster for current file position
   uint32_t  curPosition_;   // current file position in bytes from beginning
   uint32_t  dirBlock_;      // block for this files directory entry
-  uint8_t   dirIndex_;      // index of directory entry in dirBlock
   uint32_t  fileSize_;      // file size in bytes
   uint32_t  firstCluster_;  // first cluster of file
-  SdVolume* vol_;           // volume where file is located
+  char *pathend;
+
+
 
   /** experimental don't use */
   bool openParent(SdBaseFile* dir);
   // private functions
   bool addCluster();
-  bool addDirCluster();
+  cache_t* addDirCluster();
   dir_t* cacheDirEntry(uint8_t action);
-  int8_t lsPrintNext(Print *pr, uint8_t flags, uint8_t indent);
+  int8_t lsPrintNext(uint8_t flags, uint8_t indent);
   static bool make83Name(const char* str, uint8_t* name, const char** ptr);
-  bool mkdir(SdBaseFile* parent, const uint8_t dname[11]);
-  bool open(SdBaseFile* dirFile, const uint8_t dname[11], uint8_t oflag);
+  bool mkdir(SdBaseFile* parent, const uint8_t *dname);
+  bool open(SdBaseFile* dirFile, const uint8_t *dname, uint8_t oflag, bool bDir);
   bool openCachedEntry(uint8_t cacheIndex, uint8_t oflags);
   dir_t* readDirCache();
+  dir_t* readDirCacheSpecial();
+  dir_t *getLongFilename(dir_t *dir, char *longFilename, int8_t cVFATNeeded, uint32_t *pwIndexPos);
+  bool findSpace(dir_t *dir, int8_t cVFATNeeded, int8_t *pcVFATFound, uint32_t *pwIndexPos);
+  uint8_t lsRecursive(SdBaseFile *parent, uint8_t level, char *findFilename, SdBaseFile *pParentFound);
+
+  bool setDirSize();
 //------------------------------------------------------------------------------
 // to be deleted
   static void printDirName(const dir_t& dir,
-    uint8_t width, bool printSlash);
-  static void printDirName(Print* pr, const dir_t& dir,
     uint8_t width, bool printSlash);
 //------------------------------------------------------------------------------
 // Deprecated functions  - suppress cpplint warnings with NOLINT comment
@@ -2045,6 +2179,34 @@ class SdBaseFile {
     *date = d;
     *time = t;
   }
+#elif !defined(DOXYGEN)  // ALLOW_DEPRECATED_FUNCTIONS
+ public:
+  bool contiguousRange(uint32_t& bgnBlock, uint32_t& endBlock)  // NOLINT
+    __attribute__((error("use contiguousRange(&bgnBlock, &endBlock)")));
+  bool createContiguous(SdBaseFile& dirFile,  // NOLINT
+    const char* path, uint32_t size)
+    __attribute__((error("use createContiguous(&bgnBlock, &endBlock)")));
+  static void dateTimeCallback(  // NOLINT
+    void (*dateTime)(uint16_t& date, uint16_t& time))  // NOLINT
+    __attribute__((error("use void dateTimeCallback("
+     "void (*dateTime)(uint16_t* date, uint16_t* time))")));
+  bool dirEntry(dir_t& dir)  // NOLINT
+    __attribute__((error("use dirEntry(&dir)")));
+  bool mkdir(SdBaseFile& dir, const char* path)  // NOLINT
+    __attribute__((error("use mkdir(&dir, path)")));
+  bool open(SdBaseFile& dirFile, // NOLINT
+    const char* path, uint8_t oflag)
+    __attribute__((error("use open(&dirFile, path, oflag)")));
+  bool open(SdBaseFile& dirFile, const char* path)  // NOLINT
+    __attribute__((error("use open(&dirFile, path, O_RDWR)")));
+  bool open(SdBaseFile& dirFile, uint16_t index, uint8_t oflag) // NOLINT
+    __attribute__((error("use open(&dirFile, index, oflag)")));
+  bool openRoot(SdVolume& vol)  // NOLINT
+    __attribute__((error("use openRoot(&vol)")));
+  int8_t readDir(dir_t& dir)  // NOLINT
+    __attribute__((error("use readDir(&dir)")));
+  static bool remove(SdBaseFile& dirFile, const char* path)  // NOLINT
+    __attribute__((error("use remove(&dirFile, path)")));
 #endif  // ALLOW_DEPRECATED_FUNCTIONS
 };
 //------------------------------------------------------------------------------
@@ -2052,10 +2214,13 @@ class SdBaseFile {
  * \class SdFile
  * \brief SdBaseFile with Print.
  */
-class SdFile : public SdBaseFile, public Print {
+class SdFile : public SdBaseFile {
  public:
   SdFile() {}
   SdFile(const char* name, uint8_t oflag);
+#if DESTRUCTOR_CLOSES_FILE
+  ~SdFile() {}
+#endif  // DESTRUCTOR_CLOSES_FILE
   /** \return value of writeError */
   bool getWriteError() {return SdBaseFile::getWriteError();}
   /** Set writeError to zero */
@@ -2065,10 +2230,10 @@ class SdFile : public SdBaseFile, public Print {
 #else
   size_t write(uint8_t b);
 #endif
-  int16_t write(const char* str);
-  int16_t write(const void* buf, uint16_t nbyte);
-  void write_P(PGM_P str);
-  void writeln_P(PGM_P str);
+  int write(const char* str);
+  int write(const void* buf, size_t nbyte);
+  void write_P(FSTRINGPARAM(str));
+  void writeln_P(FSTRINGPARAM(str));
 };
 /** Store and print a string in flash memory.*/
 #define PgmPrint(x) SerialPrint_P(PSTR(x))
@@ -2077,10 +2242,8 @@ class SdFile : public SdBaseFile, public Print {
 
 namespace SdFatUtil {
   int FreeRam();
-  void print_P(Print* pr, PGM_P str);
-  void println_P(Print* pr, PGM_P str);
-  void SerialPrint_P(PGM_P str);
-  void SerialPrintln_P(PGM_P str);
+  void SerialPrint_P(FSTRINGPARAM(str));
+  void SerialPrintln_P(FSTRINGPARAM(str));
 }
 
 using namespace SdFatUtil;  // NOLINT
@@ -2095,43 +2258,51 @@ using namespace SdFatUtil;  // NOLINT
 class SdFat {
  public:
   SdFat() {}
-  /**
-   * Initialize an SdFat object. Arduino friendly version of init.
+#if ALLOW_DEPRECATED_FUNCTIONS && !defined(DOXYGEN)
+ /**
+   * Initialize an SdFat object.
    *
    * Initializes the SD card, SD volume, and root directory.
    *
-   * \param[in] chipSelectPin SD chip select pin. See Sd2Card::init().
    * \param[in] sckRateID value for SPI SCK rate. See Sd2Card::init().
+   * \param[in] chipSelectPin SD chip select pin. See Sd2Card::init().
    *
    * \return The value one, true, is returned for success and
    * the value zero, false, is returned for failure.
    */
-  bool begin(uint8_t chipSelectPin = SD_CHIP_SELECT_PIN,
-    uint8_t sckRateID = SPI_FULL_SPEED) {
-    return init(sckRateID, chipSelectPin);
+
+  bool init(uint8_t sckRateID = SPI_FULL_SPEED,
+    uint8_t chipSelectPin = SD_CHIP_SELECT_PIN) {
+    return begin(chipSelectPin, sckRateID);
   }
+#elif  !defined(DOXYGEN)  // ALLOW_DEPRECATED_FUNCTIONS
+  bool init() __attribute__((error("use sd.begin()")));
+  bool init(uint8_t sckRateID)
+    __attribute__((error("use sd.begin(chipSelect, sckRate)")));
+  bool init(uint8_t sckRateID, uint8_t chipSelectPin)
+    __attribute__((error("use sd.begin(chipSelect, sckRate)")));
+#endif  // ALLOW_DEPRECATED_FUNCTIONS
   /** \return a pointer to the Sd2Card object. */
   Sd2Card* card() {return &card_;}
   bool chdir(bool set_cwd = false);
   bool chdir(const char* path, bool set_cwd = false);
   void chvol();
   void errorHalt();
-  void errorHalt_P(PGM_P msg);
+  void errorHalt_P(FSTRINGPARAM(msg));
   void errorHalt(char const *msg);
   void errorPrint();
-  void errorPrint_P(PGM_P msg);
+  void errorPrint_P(FSTRINGPARAM(msg));
   void errorPrint(char const *msg);
   bool exists(const char* name);
-  bool init(uint8_t sckRateID = SPI_FULL_SPEED,
-    uint8_t chipSelectPin = SD_CHIP_SELECT_PIN);
+  bool begin(uint8_t chipSelectPin = SD_CHIP_SELECT_PIN,
+    uint8_t sckRateID = SPI_FULL_SPEED);
   void initErrorHalt();
   void initErrorHalt(char const *msg);
-  void initErrorHalt_P(PGM_P msg);
+  void initErrorHalt_P(FSTRINGPARAM(msg));
   void initErrorPrint();
   void initErrorPrint(char const *msg);
-  void initErrorPrint_P(PGM_P msg);
+  void initErrorPrint_P(FSTRINGPARAM(msg));
   void ls(uint8_t flags = 0);
-  void ls(Print* pr, uint8_t flags = 0);
   bool mkdir(const char* path, bool pFlag = true);
   bool remove(const char* path);
   bool rename(const char *oldPath, const char *newPath);
@@ -2143,18 +2314,10 @@ class SdFat {
   SdBaseFile* vwd() {return &vwd_;}
   //----------------------------------------------------------------------------
   // static functions for stdOut
-  /**
-   *  Set stdOut Print stream for messages.
-   * \param[in] stream The new Print stream.
-   */
-  static void setStdOut(Print* stream) {stdOut_ = stream;}
-  /** \return Print stream for messages. */
-  static Print* stdOut() {return stdOut_;}
 
  private:
   Sd2Card card_;
   SdVolume vol_;
   SdBaseFile vwd_;
-  static Print* stdOut_;
 };
 #endif  // SdFat_h

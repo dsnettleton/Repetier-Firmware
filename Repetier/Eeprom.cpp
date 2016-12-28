@@ -21,597 +21,626 @@
   Functions in this file are used to communicate using ascii or repetier protocol.
 */
 
-#include "Reptier.h"
+#include "Repetier.h"
 
+
+void EEPROM::update(GCode *com)
+{
 #if EEPROM_MODE!=0
-#include "Eeprom.h"
-extern void epr_eeprom_to_data();
-
-byte epr_compute_checksum() {
-  int i;
-  byte checksum=0;
-  for(i=0;i<2048;i++) {
-    if(i==EEPROM_OFFSET+EPR_INTEGRITY_BYTE) continue;
-    checksum += eeprom_read_byte ((unsigned char *)(i));
-  }
-  return checksum;
-}
-
-
-
-inline void epr_set_byte(uint pos,byte value) {
-  eeprom_write_byte((unsigned char *)(EEPROM_OFFSET+pos), value);
-}
-inline void epr_set_int(uint pos,int value) {
-  eeprom_write_word((unsigned int*)(EEPROM_OFFSET+pos),value);
-}
-inline void epr_set_long(uint pos,long value) {
-  eeprom_write_dword((unsigned long*)(EEPROM_OFFSET+pos),value);
-}
-inline void epr_set_float(uint pos,float value) {
-  eeprom_write_block(&value,(void*)(EEPROM_OFFSET+pos), 4);
-}
-void epr_out_prefix(uint pos) {
-  if(pos<EEPROM_EXTRUDER_OFFSET) return;
-  int n = (pos-EEPROM_EXTRUDER_OFFSET)/EEPROM_EXTRUDER_LENGTH+1;
-  OUT_P_I("Extr.",n);
-  out.print(' ');
-}
-void epr_out_float(uint pos,PGM_P text) {
-  OUT_P("EPR:3 ");
-  OUT(pos);
-  OUT(' ');
-  OUT(epr_get_float(pos));
-  OUT(' ');
-  epr_out_prefix(pos);
-  out.println_P(text);  
-}
-void epr_out_long(uint pos,PGM_P text) {
-  OUT_P("EPR:2 ");
-  OUT(pos);
-  OUT(' ');
-  OUT(epr_get_long(pos));
-  OUT(' ');
-  epr_out_prefix(pos);
-  out.println_P(text);  
-}
-void epr_out_int(uint pos,PGM_P text) {
-  OUT_P("EPR:1 ");
-  OUT(pos);
-  OUT(' ');
-  OUT(epr_get_int(pos));
-  OUT(' ');
-  epr_out_prefix(pos);
-  out.println_P(text);  
-}
-void epr_out_byte(uint pos,PGM_P text) {
-  OUT_P("EPR:0 ");
-  OUT(pos);
-  OUT(' ');
-  OUT((int)epr_get_byte(pos));
-  OUT(' ');
-  epr_out_prefix(pos);
-  out.println_P(text);  
-}
-
-void epr_update(GCode *com) {
-  if(GCODE_HAS_T(com) && GCODE_HAS_P(com)) switch(com->T) {
-    case 0:
-      if(GCODE_HAS_S(com)) epr_set_byte(com->P,(byte)com->S);
-      break;
-    case 1:
-      if(GCODE_HAS_S(com)) epr_set_int(com->P,(int)com->S);
-      break;
-    case 2:
-      if(GCODE_HAS_S(com)) epr_set_long(com->P,(long)com->S);
-      break;
-    case 3:
-      if(GCODE_HAS_X(com)) epr_set_float(com->P,com->X);
-      break;
-  }
-  byte newcheck = epr_compute_checksum();
-  if(newcheck!=epr_get_byte(EPR_INTEGRITY_BYTE))
-    epr_set_byte(EPR_INTEGRITY_BYTE,newcheck);
-  epr_eeprom_to_data();
-}
-
-/** \brief Copy data from EEPROM to variables.
-*/
-void epr_eeprom_reset() {
-  byte version = EEPROM_PROTOCOL_VERSION;
-  baudrate = BAUDRATE;
-  max_inactive_time = MAX_INACTIVE_TIME*1000L;
-  stepper_inactive_time = STEPPER_INACTIVE_TIME*1000L;
-  axis_steps_per_unit[0] = XAXIS_STEPS_PER_MM;
-  axis_steps_per_unit[1] = YAXIS_STEPS_PER_MM; 
-  axis_steps_per_unit[2] = ZAXIS_STEPS_PER_MM;
-  axis_steps_per_unit[3] = 1;
-  max_feedrate[0] = MAX_FEEDRATE_X;
-  max_feedrate[1] = MAX_FEEDRATE_Y;
-  max_feedrate[2] = MAX_FEEDRATE_Z;
-  homing_feedrate[0] = HOMING_FEEDRATE_X;
-  homing_feedrate[1] = HOMING_FEEDRATE_Y;
-  homing_feedrate[2] = HOMING_FEEDRATE_Z;
-  printer_state.maxJerk = MAX_JERK;
-  printer_state.maxZJerk = MAX_ZJERK;
-#ifdef RAMP_ACCELERATION
-  max_acceleration_units_per_sq_second[0] = MAX_ACCELERATION_UNITS_PER_SQ_SECOND_X;
-  max_acceleration_units_per_sq_second[1] = MAX_ACCELERATION_UNITS_PER_SQ_SECOND_Y;
-  max_acceleration_units_per_sq_second[2] = MAX_ACCELERATION_UNITS_PER_SQ_SECOND_Z;
-  max_travel_acceleration_units_per_sq_second[0] = MAX_TRAVEL_ACCELERATION_UNITS_PER_SQ_SECOND_X;
-  max_travel_acceleration_units_per_sq_second[1] = MAX_TRAVEL_ACCELERATION_UNITS_PER_SQ_SECOND_Y;
-  max_travel_acceleration_units_per_sq_second[2] = MAX_TRAVEL_ACCELERATION_UNITS_PER_SQ_SECOND_Z;
+    if(com->hasT() && com->hasP()) switch(com->T)
+        {
+        case 0:
+            if(com->hasS()) HAL::eprSetByte(com->P,(uint8_t)com->S);
+            break;
+        case 1:
+            if(com->hasS()) HAL::eprSetInt16(com->P,(int)com->S);
+            break;
+        case 2:
+            if(com->hasS()) HAL::eprSetInt32(com->P,(long)com->S);
+            break;
+        case 3:
+            if(com->hasX()) HAL::eprSetFloat(com->P,com->X);
+            break;
+        }
+    uint8_t newcheck = computeChecksum();
+    if(newcheck!=HAL::eprGetByte(EPR_INTEGRITY_BYTE))
+        HAL::eprSetByte(EPR_INTEGRITY_BYTE,newcheck);
+    readDataFromEEPROM();
+    Extruder::selectExtruderById(Extruder::current->id);
+#else
+    Com::printErrorF(Com::tNoEEPROMSupport);
 #endif
-#if USE_OPS==1
-  printer_state.opsMode = OPS_MODE;
-  printer_state.opsMinDistance = OPS_MIN_DISTANCE;
-  printer_state.opsRetractDistance = OPS_RETRACT_DISTANCE;
-  printer_state.opsRetractBacklash = OPS_RETRACT_BACKLASH;
-  printer_state.opsMoveAfter = OPS_MOVE_AFTER;
+}
+
+void EEPROM::restoreEEPROMSettingsFromConfiguration()
+{
+#if EEPROM_MODE!=0
+    uint8_t version = EEPROM_PROTOCOL_VERSION;
+    baudrate = BAUDRATE;
+    maxInactiveTime = MAX_INACTIVE_TIME*1000L;
+    stepperInactiveTime = STEPPER_INACTIVE_TIME*1000L;
+    Printer::axisStepsPerMM[X_AXIS] = XAXIS_STEPS_PER_MM;
+    Printer::axisStepsPerMM[Y_AXIS] = YAXIS_STEPS_PER_MM;
+    Printer::axisStepsPerMM[Z_AXIS] = ZAXIS_STEPS_PER_MM;
+    Printer::axisStepsPerMM[E_AXIS] = 1;
+    Printer::maxFeedrate[X_AXIS] = MAX_FEEDRATE_X;
+    Printer::maxFeedrate[Y_AXIS] = MAX_FEEDRATE_Y;
+    Printer::maxFeedrate[Z_AXIS] = MAX_FEEDRATE_Z;
+    Printer::homingFeedrate[X_AXIS] = HOMING_FEEDRATE_X;
+    Printer::homingFeedrate[Y_AXIS] = HOMING_FEEDRATE_Y;
+    Printer::homingFeedrate[Z_AXIS] = HOMING_FEEDRATE_Z;
+    Printer::maxJerk = MAX_JERK;
+#if DRIVE_SYSTEM!=3
+    Printer::maxZJerk = MAX_ZJERK;
+#endif
+#ifdef RAMP_ACCELERATION
+    Printer::maxAccelerationMMPerSquareSecond[X_AXIS] = MAX_ACCELERATION_UNITS_PER_SQ_SECOND_X;
+    Printer::maxAccelerationMMPerSquareSecond[Y_AXIS] = MAX_ACCELERATION_UNITS_PER_SQ_SECOND_Y;
+    Printer::maxAccelerationMMPerSquareSecond[Z_AXIS] = MAX_ACCELERATION_UNITS_PER_SQ_SECOND_Z;
+    Printer::maxTravelAccelerationMMPerSquareSecond[X_AXIS] = MAX_TRAVEL_ACCELERATION_UNITS_PER_SQ_SECOND_X;
+    Printer::maxTravelAccelerationMMPerSquareSecond[Y_AXIS] = MAX_TRAVEL_ACCELERATION_UNITS_PER_SQ_SECOND_Y;
+    Printer::maxTravelAccelerationMMPerSquareSecond[Z_AXIS] = MAX_TRAVEL_ACCELERATION_UNITS_PER_SQ_SECOND_Z;
 #endif
 #if HAVE_HEATED_BED
-  heatedBedController.heatManager= HEATED_BED_HEAT_MANAGER;
+    heatedBedController.heatManager= HEATED_BED_HEAT_MANAGER;
 #ifdef TEMP_PID
-  heatedBedController.pidDriveMax = HEATED_BED_PID_INTEGRAL_DRIVE_MAX;
-  heatedBedController.pidDriveMin = HEATED_BED_PID_INTEGRAL_DRIVE_MIN;
-  heatedBedController.pidPGain = HEATED_BED_PID_PGAIN;
-  heatedBedController.pidIGain = HEATED_BED_PID_IGAIN;
-  heatedBedController.pidDGain = HEATED_BED_PID_DGAIN;
-  heatedBedController.pidMax = HEATED_BED_PID_MAX;
+    heatedBedController.pidDriveMax = HEATED_BED_PID_INTEGRAL_DRIVE_MAX;
+    heatedBedController.pidDriveMin = HEATED_BED_PID_INTEGRAL_DRIVE_MIN;
+    heatedBedController.pidPGain = HEATED_BED_PID_PGAIN;
+    heatedBedController.pidIGain = HEATED_BED_PID_IGAIN;
+    heatedBedController.pidDGain = HEATED_BED_PID_DGAIN;
+    heatedBedController.pidMax = HEATED_BED_PID_MAX;
 #endif
 #endif
-  printer_state.xLength = X_MAX_LENGTH;
-  printer_state.yLength = Y_MAX_LENGTH;
-  printer_state.zLength = Z_MAX_LENGTH;
-  printer_state.xMin = X_MIN_POS;
-  printer_state.yMin = Y_MIN_POS;
-  printer_state.zMin = Z_MIN_POS;
+    Printer::xLength = X_MAX_LENGTH;
+    Printer::yLength = Y_MAX_LENGTH;
+    Printer::zLength = Z_MAX_LENGTH;
+    Printer::xMin = X_MIN_POS;
+    Printer::yMin = Y_MIN_POS;
+    Printer::zMin = Z_MIN_POS;
 #if ENABLE_BACKLASH_COMPENSATION
-  printer_state.backlashX = X_BACKLASH;
-  printer_state.backlashY = Y_BACKLASH;
-  printer_state.backlashZ = Z_BACKLASH;
+    Printer::backlashX = X_BACKLASH;
+    Printer::backlashY = Y_BACKLASH;
+    Printer::backlashZ = Z_BACKLASH;
 #endif
-  Extruder *e;
+    Extruder *e;
 #if NUM_EXTRUDER>0
-  e = &extruder[0];
-  e->stepsPerMM = EXT0_STEPS_PER_MM;
-  e->maxFeedrate = EXT0_MAX_FEEDRATE;
-  e->maxStartFeedrate = EXT0_MAX_START_FEEDRATE;
-  e->maxAcceleration = EXT0_MAX_ACCELERATION;
-  e->tempControl.heatManager = EXT0_HEAT_MANAGER;
+    e = &extruder[0];
+    e->stepsPerMM = EXT0_STEPS_PER_MM;
+    e->maxFeedrate = EXT0_MAX_FEEDRATE;
+    e->maxStartFeedrate = EXT0_MAX_START_FEEDRATE;
+    e->maxAcceleration = EXT0_MAX_ACCELERATION;
+    e->tempControl.heatManager = EXT0_HEAT_MANAGER;
 #ifdef TEMP_PID
-  e->tempControl.pidDriveMax = EXT0_PID_INTEGRAL_DRIVE_MAX;
-  e->tempControl.pidDriveMin = EXT0_PID_INTEGRAL_DRIVE_MIN;
-  e->tempControl.pidPGain = EXT0_PID_P;
-  e->tempControl.pidIGain = EXT0_PID_I;
-  e->tempControl.pidDGain = EXT0_PID_D;
-  e->tempControl.pidMax = EXT0_PID_MAX;
+    e->tempControl.pidDriveMax = EXT0_PID_INTEGRAL_DRIVE_MAX;
+    e->tempControl.pidDriveMin = EXT0_PID_INTEGRAL_DRIVE_MIN;
+    e->tempControl.pidPGain = EXT0_PID_P;
+    e->tempControl.pidIGain = EXT0_PID_I;
+    e->tempControl.pidDGain = EXT0_PID_D;
+    e->tempControl.pidMax = EXT0_PID_MAX;
 #endif
-  e->yOffset = EXT0_Y_OFFSET;
-  e->xOffset = EXT0_X_OFFSET;
-  e->watchPeriod = EXT0_WATCHPERIOD;
+    e->yOffset = EXT0_Y_OFFSET;
+    e->xOffset = EXT0_X_OFFSET;
+    e->watchPeriod = EXT0_WATCHPERIOD;
 #if RETRACT_DURING_HEATUP
-  e->waitRetractTemperature = EXT0_WAIT_RETRACT_TEMP;
-  e->waitRetractUnits = EXT0_WAIT_RETRACT_UNITS;
+    e->waitRetractTemperature = EXT0_WAIT_RETRACT_TEMP;
+    e->waitRetractUnits = EXT0_WAIT_RETRACT_UNITS;
 #endif
-  e->coolerSpeed = EXT0_EXTRUDER_COOLER_SPEED;
+    e->coolerSpeed = EXT0_EXTRUDER_COOLER_SPEED;
 #ifdef USE_ADVANCE
 #ifdef ENABLE_QUADRATIC_ADVANCE
-  e->advanceK = EXT0_ADVANCE_K;
+    e->advanceK = EXT0_ADVANCE_K;
 #endif
-  e->advanceL = EXT0_ADVANCE_L;
+    e->advanceL = EXT0_ADVANCE_L;
 #endif
 #endif // NUM_EXTRUDER>0
 #if NUM_EXTRUDER>1
-  e = &extruder[1];
-  e->stepsPerMM = EXT1_STEPS_PER_MM;
-  e->maxFeedrate = EXT1_MAX_FEEDRATE;
-  e->maxStartFeedrate = EXT1_MAX_START_FEEDRATE;
-  e->maxAcceleration = EXT1_MAX_ACCELERATION;
-  e->tempControl.heatManager = EXT1_HEAT_MANAGER;
+    e = &extruder[1];
+    e->stepsPerMM = EXT1_STEPS_PER_MM;
+    e->maxFeedrate = EXT1_MAX_FEEDRATE;
+    e->maxStartFeedrate = EXT1_MAX_START_FEEDRATE;
+    e->maxAcceleration = EXT1_MAX_ACCELERATION;
+    e->tempControl.heatManager = EXT1_HEAT_MANAGER;
 #ifdef TEMP_PID
-  e->tempControl.pidDriveMax = EXT1_PID_INTEGRAL_DRIVE_MAX;
-  e->tempControl.pidDriveMin = EXT1_PID_INTEGRAL_DRIVE_MIN;
-  e->tempControl.pidPGain = EXT1_PID_P;
-  e->tempControl.pidIGain = EXT1_PID_I;
-  e->tempControl.pidDGain = EXT1_PID_D;
-  e->tempControl.pidMax = EXT1_PID_MAX;
+    e->tempControl.pidDriveMax = EXT1_PID_INTEGRAL_DRIVE_MAX;
+    e->tempControl.pidDriveMin = EXT1_PID_INTEGRAL_DRIVE_MIN;
+    e->tempControl.pidPGain = EXT1_PID_P;
+    e->tempControl.pidIGain = EXT1_PID_I;
+    e->tempControl.pidDGain = EXT1_PID_D;
+    e->tempControl.pidMax = EXT1_PID_MAX;
 #endif
-  e->yOffset = EXT1_Y_OFFSET;
-  e->xOffset = EXT1_X_OFFSET;
-  e->watchPeriod = EXT1_WATCHPERIOD;
+    e->yOffset = EXT1_Y_OFFSET;
+    e->xOffset = EXT1_X_OFFSET;
+    e->watchPeriod = EXT1_WATCHPERIOD;
 #if RETRACT_DURING_HEATUP
-  e->waitRetractTemperature = EXT1_WAIT_RETRACT_TEMP;
-  e->waitRetractUnits = EXT1_WAIT_RETRACT_UNITS;
+    e->waitRetractTemperature = EXT1_WAIT_RETRACT_TEMP;
+    e->waitRetractUnits = EXT1_WAIT_RETRACT_UNITS;
 #endif
-  e->coolerSpeed = EXT1_EXTRUDER_COOLER_SPEED;
+    e->coolerSpeed = EXT1_EXTRUDER_COOLER_SPEED;
 #ifdef USE_ADVANCE
 #ifdef ENABLE_QUADRATIC_ADVANCE
-  e->advanceK = EXT1_ADVANCE_K;
+    e->advanceK = EXT1_ADVANCE_K;
 #endif
-  e->advanceL = EXT1_ADVANCE_L;
+    e->advanceL = EXT1_ADVANCE_L;
 #endif
 #endif // NUM_EXTRUDER > 1
 #if NUM_EXTRUDER>2
-  e = &extruder[2];
-  e->stepsPerMM = EXT2_STEPS_PER_MM;
-  e->maxFeedrate = EXT2_MAX_FEEDRATE;
-  e->maxStartFeedrate = EXT2_MAX_START_FEEDRATE;
-  e->maxAcceleration = EXT2_MAX_ACCELERATION;
-  e->tempControl.heatManager = EXT2_HEAT_MANAGER;
+    e = &extruder[2];
+    e->stepsPerMM = EXT2_STEPS_PER_MM;
+    e->maxFeedrate = EXT2_MAX_FEEDRATE;
+    e->maxStartFeedrate = EXT2_MAX_START_FEEDRATE;
+    e->maxAcceleration = EXT2_MAX_ACCELERATION;
+    e->tempControl.heatManager = EXT2_HEAT_MANAGER;
 #ifdef TEMP_PID
-  e->tempControl.pidDriveMax = EXT2_PID_INTEGRAL_DRIVE_MAX;
-  e->tempControl.pidDriveMin = EXT2_PID_INTEGRAL_DRIVE_MIN;
-  e->tempControl.pidPGain = EXT2_PID_P;
-  e->tempControl.pidIGain = EXT2_PID_I;
-  e->tempControl.pidDGain = EXT2_PID_D;
-  e->tempControl.pidMax = EXT2_PID_MAX;
+    e->tempControl.pidDriveMax = EXT2_PID_INTEGRAL_DRIVE_MAX;
+    e->tempControl.pidDriveMin = EXT2_PID_INTEGRAL_DRIVE_MIN;
+    e->tempControl.pidPGain = EXT2_PID_P;
+    e->tempControl.pidIGain = EXT2_PID_I;
+    e->tempControl.pidDGain = EXT2_PID_D;
+    e->tempControl.pidMax = EXT2_PID_MAX;
 #endif
-  e->yOffset = EXT2_Y_OFFSET;
-  e->xOffset = EXT2_X_OFFSET;
-  e->watchPeriod = EXT2_WATCHPERIOD;
+    e->yOffset = EXT2_Y_OFFSET;
+    e->xOffset = EXT2_X_OFFSET;
+    e->watchPeriod = EXT2_WATCHPERIOD;
 #if RETRACT_DURING_HEATUP
-  e->waitRetractTemperature = EXT2_WAIT_RETRACT_TEMP;
-  e->waitRetractUnits = EXT2_WAIT_RETRACT_UNITS;
+    e->waitRetractTemperature = EXT2_WAIT_RETRACT_TEMP;
+    e->waitRetractUnits = EXT2_WAIT_RETRACT_UNITS;
 #endif
-  e->coolerSpeed = EXT2_EXTRUDER_COOLER_SPEED;
+    e->coolerSpeed = EXT2_EXTRUDER_COOLER_SPEED;
 #ifdef USE_ADVANCE
 #ifdef ENABLE_QUADRATIC_ADVANCE
-  e->advanceK = EXT2_ADVANCE_K;
+    e->advanceK = EXT2_ADVANCE_K;
 #endif
-  e->advanceL = EXT2_ADVANCE_L;
+    e->advanceL = EXT2_ADVANCE_L;
 #endif
 #endif // NUM_EXTRUDER > 2
 #if NUM_EXTRUDER>3
-  e = &extruder[3];
-  e->stepsPerMM = EXT3_STEPS_PER_MM;
-  e->maxFeedrate = EXT3_MAX_FEEDRATE;
-  e->maxStartFeedrate = EXT3_MAX_START_FEEDRATE;
-  e->maxAcceleration = EXT3_MAX_ACCELERATION;
-  e->tempControl.heatManager = EXT3_HEAT_MANAGER;
+    e = &extruder[3];
+    e->stepsPerMM = EXT3_STEPS_PER_MM;
+    e->maxFeedrate = EXT3_MAX_FEEDRATE;
+    e->maxStartFeedrate = EXT3_MAX_START_FEEDRATE;
+    e->maxAcceleration = EXT3_MAX_ACCELERATION;
+    e->tempControl.heatManager = EXT3_HEAT_MANAGER;
 #ifdef TEMP_PID
-  e->tempControl.pidDriveMax = EXT3_PID_INTEGRAL_DRIVE_MAX;
-  e->tempControl.pidDriveMin = EXT3_PID_INTEGRAL_DRIVE_MIN;
-  e->tempControl.pidPGain = EXT3_PID_P;
-  e->tempControl.pidIGain = EXT3_PID_I;
-  e->tempControl.pidDGain = EXT3_PID_D;
-  e->tempControl.pidMax = EXT3_PID_MAX;
+    e->tempControl.pidDriveMax = EXT3_PID_INTEGRAL_DRIVE_MAX;
+    e->tempControl.pidDriveMin = EXT3_PID_INTEGRAL_DRIVE_MIN;
+    e->tempControl.pidPGain = EXT3_PID_P;
+    e->tempControl.pidIGain = EXT3_PID_I;
+    e->tempControl.pidDGain = EXT3_PID_D;
+    e->tempControl.pidMax = EXT3_PID_MAX;
 #endif
-  e->yOffset = EXT3_Y_OFFSET;
-  e->xOffset = EXT3_X_OFFSET;
-  e->watchPeriod = EXT3_WATCHPERIOD;
+    e->yOffset = EXT3_Y_OFFSET;
+    e->xOffset = EXT3_X_OFFSET;
+    e->watchPeriod = EXT3_WATCHPERIOD;
 #if RETRACT_DURING_HEATUP
-  e->waitRetractTemperature = EXT3_WAIT_RETRACT_TEMP;
-  e->waitRetractUnits = EXT3_WAIT_RETRACT_UNITS;
+    e->waitRetractTemperature = EXT3_WAIT_RETRACT_TEMP;
+    e->waitRetractUnits = EXT3_WAIT_RETRACT_UNITS;
 #endif
-  e->coolerSpeed = EXT3_EXTRUDER_COOLER_SPEED;
+    e->coolerSpeed = EXT3_EXTRUDER_COOLER_SPEED;
 #ifdef USE_ADVANCE
 #ifdef ENABLE_QUADRATIC_ADVANCE
-  e->advanceK = EXT3_ADVANCE_K;
+    e->advanceK = EXT3_ADVANCE_K;
 #endif
-  e->advanceL = EXT3_ADVANCE_L;
+    e->advanceL = EXT3_ADVANCE_L;
 #endif
 #endif // NUM_EXTRUDER > 3
 #if NUM_EXTRUDER>4
-  e = &extruder[4];
-  e->stepsPerMM = EXT4_STEPS_PER_MM;
-  e->maxFeedrate = EXT4_MAX_FEEDRATE;
-  e->maxStartFeedrate = EXT4_MAX_START_FEEDRATE;
-  e->maxAcceleration = EXT4_MAX_ACCELERATION;
-  e->tempControl.heatManager = EXT4_HEAT_MANAGER;
+    e = &extruder[4];
+    e->stepsPerMM = EXT4_STEPS_PER_MM;
+    e->maxFeedrate = EXT4_MAX_FEEDRATE;
+    e->maxStartFeedrate = EXT4_MAX_START_FEEDRATE;
+    e->maxAcceleration = EXT4_MAX_ACCELERATION;
+    e->tempControl.heatManager = EXT4_HEAT_MANAGER;
 #ifdef TEMP_PID
-  e->tempControl.pidDriveMax = EXT4_PID_INTEGRAL_DRIVE_MAX;
-  e->tempControl.pidDriveMin = EXT4_PID_INTEGRAL_DRIVE_MIN;
-  e->tempControl.pidPGain = EXT4_PID_P;
-  e->tempControl.pidIGain = EXT4_PID_I;
-  e->tempControl.pidDGain = EXT4_PID_D;
-  e->tempControl.pidMax = EXT4_PID_MAX;
+    e->tempControl.pidDriveMax = EXT4_PID_INTEGRAL_DRIVE_MAX;
+    e->tempControl.pidDriveMin = EXT4_PID_INTEGRAL_DRIVE_MIN;
+    e->tempControl.pidPGain = EXT4_PID_P;
+    e->tempControl.pidIGain = EXT4_PID_I;
+    e->tempControl.pidDGain = EXT4_PID_D;
+    e->tempControl.pidMax = EXT4_PID_MAX;
 #endif
-  e->yOffset = EXT4_Y_OFFSET;
-  e->xOffset = EXT4_X_OFFSET;
-  e->watchPeriod = EXT4_WATCHPERIOD;
+    e->yOffset = EXT4_Y_OFFSET;
+    e->xOffset = EXT4_X_OFFSET;
+    e->watchPeriod = EXT4_WATCHPERIOD;
 #if RETRACT_DURING_HEATUP
-  e->waitRetractTemperature = EXT4_WAIT_RETRACT_TEMP;
-  e->waitRetractUnits = EXT4_WAIT_RETRACT_UNITS;
+    e->waitRetractTemperature = EXT4_WAIT_RETRACT_TEMP;
+    e->waitRetractUnits = EXT4_WAIT_RETRACT_UNITS;
 #endif
-  e->coolerSpeed = EXT4_EXTRUDER_COOLER_SPEED;
+    e->coolerSpeed = EXT4_EXTRUDER_COOLER_SPEED;
 #ifdef USE_ADVANCE
 #ifdef ENABLE_QUADRATIC_ADVANCE
-  e->advanceK = EXT4_ADVANCE_K;
+    e->advanceK = EXT4_ADVANCE_K;
 #endif
-  e->advanceL = EXT4_ADVANCE_L;
+    e->advanceL = EXT4_ADVANCE_L;
 #endif
 #endif // NUM_EXTRUDER > 4
 #if NUM_EXTRUDER>5
-  e = &extruder[5];
-  e->stepsPerMM = EXT5_STEPS_PER_MM;
-  e->maxFeedrate = EXT5_MAX_FEEDRATE;
-  e->maxStartFeedrate = EXT5_MAX_START_FEEDRATE;
-  e->maxAcceleration = EXT5_MAX_ACCELERATION;
-  e->tempControl.heatManager = EXT5_HEAT_MANAGER;
+    e = &extruder[5];
+    e->stepsPerMM = EXT5_STEPS_PER_MM;
+    e->maxFeedrate = EXT5_MAX_FEEDRATE;
+    e->maxStartFeedrate = EXT5_MAX_START_FEEDRATE;
+    e->maxAcceleration = EXT5_MAX_ACCELERATION;
+    e->tempControl.heatManager = EXT5_HEAT_MANAGER;
 #ifdef TEMP_PID
-  e->tempControl.pidDriveMax = EXT5_PID_INTEGRAL_DRIVE_MAX;
-  e->tempControl.pidDriveMin = EXT5_PID_INTEGRAL_DRIVE_MIN;
-  e->tempControl.pidPGain = EXT5_PID_P;
-  e->tempControl.pidIGain = EXT5_PID_I;
-  e->tempControl.pidDGain = EXT5_PID_D;
-  e->tempControl.pidMax = EXT5_PID_MAX;
+    e->tempControl.pidDriveMax = EXT5_PID_INTEGRAL_DRIVE_MAX;
+    e->tempControl.pidDriveMin = EXT5_PID_INTEGRAL_DRIVE_MIN;
+    e->tempControl.pidPGain = EXT5_PID_P;
+    e->tempControl.pidIGain = EXT5_PID_I;
+    e->tempControl.pidDGain = EXT5_PID_D;
+    e->tempControl.pidMax = EXT5_PID_MAX;
 #endif
-  e->yOffset = EXT5_Y_OFFSET;
-  e->xOffset = EXT5_X_OFFSET;
-  e->watchPeriod = EXT5_WATCHPERIOD;
+    e->yOffset = EXT5_Y_OFFSET;
+    e->xOffset = EXT5_X_OFFSET;
+    e->watchPeriod = EXT5_WATCHPERIOD;
 #if RETRACT_DURING_HEATUP
-  e->waitRetractTemperature = EXT5_WAIT_RETRACT_TEMP;
-  e->waitRetractUnits = EXT5_WAIT_RETRACT_UNITS;
+    e->waitRetractTemperature = EXT5_WAIT_RETRACT_TEMP;
+    e->waitRetractUnits = EXT5_WAIT_RETRACT_UNITS;
 #endif
-  e->coolerSpeed = EXT5_EXTRUDER_COOLER_SPEED;
+    e->coolerSpeed = EXT5_EXTRUDER_COOLER_SPEED;
 #ifdef USE_ADVANCE
 #ifdef ENABLE_QUADRATIC_ADVANCE
-  e->advanceK = EXT5_ADVANCE_K;
+    e->advanceK = EXT5_ADVANCE_K;
 #endif
-  e->advanceL = EXT5_ADVANCE_L;
+    e->advanceL = EXT5_ADVANCE_L;
 #endif
 #endif // NUM_EXTRUDER > 5
-  extruder_select(current_extruder->id);
-  update_ramps_parameter();
-  initHeatedBed();
-}
-/** \brief Moves current settings to EEPROM.
-
-The values the are currently set are used to fill the eeprom.*/
-void epr_data_to_eeprom(byte corrupted) {
-  epr_set_long(EPR_BAUDRATE,baudrate);
-  epr_set_long(EPR_MAX_INACTIVE_TIME,max_inactive_time);
-  epr_set_long(EPR_STEPPER_INACTIVE_TIME,stepper_inactive_time);
-//#define EPR_ACCELERATION_TYPE 1
-  epr_set_float(EPR_XAXIS_STEPS_PER_MM,axis_steps_per_unit[0]);
-  epr_set_float(EPR_YAXIS_STEPS_PER_MM,axis_steps_per_unit[1]);
-  epr_set_float(EPR_ZAXIS_STEPS_PER_MM,axis_steps_per_unit[2]);
-  epr_set_float(EPR_X_MAX_FEEDRATE,max_feedrate[0]);
-  epr_set_float(EPR_Y_MAX_FEEDRATE,max_feedrate[1]);
-  epr_set_float(EPR_Z_MAX_FEEDRATE,max_feedrate[2]);
-  epr_set_float(EPR_X_HOMING_FEEDRATE,homing_feedrate[0]);
-  epr_set_float(EPR_Y_HOMING_FEEDRATE,homing_feedrate[1]);
-  epr_set_float(EPR_Z_HOMING_FEEDRATE,homing_feedrate[2]);
-  epr_set_float(EPR_MAX_JERK,printer_state.maxJerk);
-  epr_set_float(EPR_MAX_ZJERK,printer_state.maxZJerk);
-#ifdef RAMP_ACCELERATION
-  epr_set_float(EPR_X_MAX_ACCEL,max_acceleration_units_per_sq_second[0]);
-  epr_set_float(EPR_Y_MAX_ACCEL,max_acceleration_units_per_sq_second[1]);
-  epr_set_float(EPR_Z_MAX_ACCEL,max_acceleration_units_per_sq_second[2]);
-  epr_set_float(EPR_X_MAX_TRAVEL_ACCEL,max_travel_acceleration_units_per_sq_second[0]);
-  epr_set_float(EPR_Y_MAX_TRAVEL_ACCEL,max_travel_acceleration_units_per_sq_second[1]);
-  epr_set_float(EPR_Z_MAX_TRAVEL_ACCEL,max_travel_acceleration_units_per_sq_second[2]);
+#if FEATURE_AUTOLEVEL && FEATURE_Z_PROBE
+    Printer::setAutolevelActive(false);
+    Printer::resetTransformationMatrix(true);
 #endif
-#if USE_OPS==1
-  epr_set_float(EPR_OPS_MIN_DISTANCE,printer_state.opsMinDistance);
-  epr_set_byte(EPR_OPS_MODE,printer_state.opsMode);
-  epr_set_float(EPR_OPS_MOVE_AFTER,printer_state.opsMoveAfter);
-  epr_set_float(EPR_OPS_RETRACT_DISTANCE,printer_state.opsRetractDistance);
-  epr_set_float(EPR_OPS_RETRACT_BACKLASH,printer_state.opsRetractBacklash);
+    initalizeUncached();
+    Printer::updateDerivedParameter();
+    Extruder::selectExtruderById(Extruder::current->id);
+    Extruder::initHeatedBed();
+    Com::printInfoF(Com::tEPRConfigResetDefaults);
 #else
-  epr_set_float(EPR_OPS_MIN_DISTANCE,OPS_MIN_DISTANCE);
-  epr_set_byte(EPR_OPS_MODE,OPS_MODE);
-  epr_set_float(EPR_OPS_MOVE_AFTER,OPS_MOVE_AFTER);
-  epr_set_float(EPR_OPS_RETRACT_DISTANCE,OPS_RETRACT_DISTANCE);
-  epr_set_float(EPR_OPS_RETRACT_BACKLASH,OPS_RETRACT_BACKLASH);
+    Com::printErrorF(Com::tNoEEPROMSupport);
+#endif
+
+}
+
+void EEPROM::storeDataIntoEEPROM(uint8_t corrupted)
+{
+#if EEPROM_MODE!=0
+    HAL::eprSetInt32(EPR_BAUDRATE,baudrate);
+    HAL::eprSetInt32(EPR_MAX_INACTIVE_TIME,maxInactiveTime);
+    HAL::eprSetInt32(EPR_STEPPER_INACTIVE_TIME,stepperInactiveTime);
+//#define EPR_ACCELERATION_TYPE 1
+    HAL::eprSetFloat(EPR_XAXIS_STEPS_PER_MM,Printer::axisStepsPerMM[0]);
+    HAL::eprSetFloat(EPR_YAXIS_STEPS_PER_MM,Printer::axisStepsPerMM[1]);
+    HAL::eprSetFloat(EPR_ZAXIS_STEPS_PER_MM,Printer::axisStepsPerMM[2]);
+    HAL::eprSetFloat(EPR_X_MAX_FEEDRATE,Printer::maxFeedrate[0]);
+    HAL::eprSetFloat(EPR_Y_MAX_FEEDRATE,Printer::maxFeedrate[1]);
+    HAL::eprSetFloat(EPR_Z_MAX_FEEDRATE,Printer::maxFeedrate[2]);
+    HAL::eprSetFloat(EPR_X_HOMING_FEEDRATE,Printer::homingFeedrate[0]);
+    HAL::eprSetFloat(EPR_Y_HOMING_FEEDRATE,Printer::homingFeedrate[1]);
+    HAL::eprSetFloat(EPR_Z_HOMING_FEEDRATE,Printer::homingFeedrate[2]);
+    HAL::eprSetFloat(EPR_MAX_JERK,Printer::maxJerk);
+#if DRIVE_SYSTEM!=3
+    HAL::eprSetFloat(EPR_MAX_ZJERK,Printer::maxZJerk);
+#endif
+#ifdef RAMP_ACCELERATION
+    HAL::eprSetFloat(EPR_X_MAX_ACCEL,Printer::maxAccelerationMMPerSquareSecond[0]);
+    HAL::eprSetFloat(EPR_Y_MAX_ACCEL,Printer::maxAccelerationMMPerSquareSecond[1]);
+    HAL::eprSetFloat(EPR_Z_MAX_ACCEL,Printer::maxAccelerationMMPerSquareSecond[2]);
+    HAL::eprSetFloat(EPR_X_MAX_TRAVEL_ACCEL,Printer::maxTravelAccelerationMMPerSquareSecond[0]);
+    HAL::eprSetFloat(EPR_Y_MAX_TRAVEL_ACCEL,Printer::maxTravelAccelerationMMPerSquareSecond[1]);
+    HAL::eprSetFloat(EPR_Z_MAX_TRAVEL_ACCEL,Printer::maxTravelAccelerationMMPerSquareSecond[2]);
 #endif
 #if HAVE_HEATED_BED
-  epr_set_byte(EPR_BED_HEAT_MANAGER,heatedBedController.heatManager);
+    HAL::eprSetByte(EPR_BED_HEAT_MANAGER,heatedBedController.heatManager);
 #else
-  epr_set_byte(EPR_BED_HEAT_MANAGER,HEATED_BED_HEAT_MANAGER);
+    HAL::eprSetByte(EPR_BED_HEAT_MANAGER,HEATED_BED_HEAT_MANAGER);
 #endif
 #if defined(TEMP_PID) && HAVE_HEATED_BED
-  epr_set_byte(EPR_BED_DRIVE_MAX,heatedBedController.pidDriveMax);
-  epr_set_byte(EPR_BED_DRIVE_MIN,heatedBedController.pidDriveMin);
-  epr_set_float(EPR_BED_PID_PGAIN,heatedBedController.pidPGain);
-  epr_set_float(EPR_BED_PID_IGAIN,heatedBedController.pidIGain);
-  epr_set_float(EPR_BED_PID_DGAIN,heatedBedController.pidDGain);
-  epr_set_byte(EPR_BED_PID_MAX,heatedBedController.pidMax);
+    HAL::eprSetByte(EPR_BED_DRIVE_MAX,heatedBedController.pidDriveMax);
+    HAL::eprSetByte(EPR_BED_DRIVE_MIN,heatedBedController.pidDriveMin);
+    HAL::eprSetFloat(EPR_BED_PID_PGAIN,heatedBedController.pidPGain);
+    HAL::eprSetFloat(EPR_BED_PID_IGAIN,heatedBedController.pidIGain);
+    HAL::eprSetFloat(EPR_BED_PID_DGAIN,heatedBedController.pidDGain);
+    HAL::eprSetByte(EPR_BED_PID_MAX,heatedBedController.pidMax);
 #else
-  epr_set_byte(EPR_BED_DRIVE_MAX,HEATED_BED_PID_INTEGRAL_DRIVE_MAX);
-  epr_set_byte(EPR_BED_DRIVE_MIN,HEATED_BED_PID_INTEGRAL_DRIVE_MIN);
-  epr_set_float(EPR_BED_PID_PGAIN,HEATED_BED_PID_PGAIN);
-  epr_set_float(EPR_BED_PID_IGAIN,HEATED_BED_PID_IGAIN);
-  epr_set_float(EPR_BED_PID_DGAIN,HEATED_BED_PID_DGAIN);
-  epr_set_byte(EPR_BED_PID_MAX,HEATED_BED_PID_MAX);
+    HAL::eprSetByte(EPR_BED_DRIVE_MAX,HEATED_BED_PID_INTEGRAL_DRIVE_MAX);
+    HAL::eprSetByte(EPR_BED_DRIVE_MIN,HEATED_BED_PID_INTEGRAL_DRIVE_MIN);
+    HAL::eprSetFloat(EPR_BED_PID_PGAIN,HEATED_BED_PID_PGAIN);
+    HAL::eprSetFloat(EPR_BED_PID_IGAIN,HEATED_BED_PID_IGAIN);
+    HAL::eprSetFloat(EPR_BED_PID_DGAIN,HEATED_BED_PID_DGAIN);
+    HAL::eprSetByte(EPR_BED_PID_MAX,HEATED_BED_PID_MAX);
 #endif
-  epr_set_float(EPR_X_HOME_OFFSET,printer_state.xMin);
-  epr_set_float(EPR_Y_HOME_OFFSET,printer_state.yMin);
-  epr_set_float(EPR_Z_HOME_OFFSET,printer_state.zMin);
-  epr_set_float(EPR_X_LENGTH,printer_state.xLength);
-  epr_set_float(EPR_Y_LENGTH,printer_state.yLength);
-  epr_set_float(EPR_Z_LENGTH,printer_state.zLength);
+    HAL::eprSetFloat(EPR_X_HOME_OFFSET,Printer::xMin);
+    HAL::eprSetFloat(EPR_Y_HOME_OFFSET,Printer::yMin);
+    HAL::eprSetFloat(EPR_Z_HOME_OFFSET,Printer::zMin);
+    HAL::eprSetFloat(EPR_X_LENGTH,Printer::xLength);
+    HAL::eprSetFloat(EPR_Y_LENGTH,Printer::yLength);
+    HAL::eprSetFloat(EPR_Z_LENGTH,Printer::zLength);
 #if ENABLE_BACKLASH_COMPENSATION
-  epr_set_float(EPR_BACKLASH_X,printer_state.backlashX);
-  epr_set_float(EPR_BACKLASH_Y,printer_state.backlashY);
-  epr_set_float(EPR_BACKLASH_Z,printer_state.backlashZ);
+    HAL::eprSetFloat(EPR_BACKLASH_X,Printer::backlashX);
+    HAL::eprSetFloat(EPR_BACKLASH_Y,Printer::backlashY);
+    HAL::eprSetFloat(EPR_BACKLASH_Z,Printer::backlashZ);
 #else
-  epr_set_float(EPR_BACKLASH_X,0);
-  epr_set_float(EPR_BACKLASH_Y,0);
-  epr_set_float(EPR_BACKLASH_Z,0);
+    HAL::eprSetFloat(EPR_BACKLASH_X,0);
+    HAL::eprSetFloat(EPR_BACKLASH_Y,0);
+    HAL::eprSetFloat(EPR_BACKLASH_Z,0);
 #endif
+#if FEATURE_AUTOLEVEL
+    HAL::eprSetByte(EPR_AUTOLEVEL_ACTIVE,Printer::isAutolevelActive());
+    for(uint8_t i=0; i<9; i++)
+        HAL::eprSetFloat(EPR_AUTOLEVEL_MATRIX+((int)i)<<2,Printer::autolevelTransformation[i]);
+#endif
+    // now the extruder
+    for(uint8_t i=0; i<NUM_EXTRUDER; i++)
+    {
+#if FEATURE_WATCHDOG
+    HAL::pingWatchdog();
+#endif // FEATURE_WATCHDOG
 
-  // now the extruder
-  for(byte i=0;i<NUM_EXTRUDER;i++) {
-    int o=i*EEPROM_EXTRUDER_LENGTH+EEPROM_EXTRUDER_OFFSET;
-    Extruder *e = &extruder[i];
-    epr_set_float(o+EPR_EXTRUDER_STEPS_PER_MM,e->stepsPerMM);
-    epr_set_float(o+EPR_EXTRUDER_MAX_FEEDRATE,e->maxFeedrate);
-    epr_set_float(o+EPR_EXTRUDER_MAX_START_FEEDRATE,e->maxStartFeedrate);
-    epr_set_float(o+EPR_EXTRUDER_MAX_ACCELERATION,e->maxAcceleration);
-    epr_set_byte(o+EPR_EXTRUDER_HEAT_MANAGER,e->tempControl.heatManager);
+        int o=i*EEPROM_EXTRUDER_LENGTH+EEPROM_EXTRUDER_OFFSET;
+        Extruder *e = &extruder[i];
+        HAL::eprSetFloat(o+EPR_EXTRUDER_STEPS_PER_MM,e->stepsPerMM);
+        HAL::eprSetFloat(o+EPR_EXTRUDER_MAX_FEEDRATE,e->maxFeedrate);
+        HAL::eprSetFloat(o+EPR_EXTRUDER_MAX_START_FEEDRATE,e->maxStartFeedrate);
+        HAL::eprSetFloat(o+EPR_EXTRUDER_MAX_ACCELERATION,e->maxAcceleration);
+        HAL::eprSetByte(o+EPR_EXTRUDER_HEAT_MANAGER,e->tempControl.heatManager);
 #ifdef TEMP_PID
-    epr_set_byte(o+EPR_EXTRUDER_DRIVE_MAX,e->tempControl.pidDriveMax);
-    epr_set_byte(o+EPR_EXTRUDER_DRIVE_MIN,e->tempControl.pidDriveMin);
-    epr_set_float(o+EPR_EXTRUDER_PID_PGAIN,e->tempControl.pidPGain);
-    epr_set_float(o+EPR_EXTRUDER_PID_IGAIN,e->tempControl.pidIGain);
-    epr_set_float(o+EPR_EXTRUDER_PID_DGAIN,e->tempControl.pidDGain);
-    epr_set_byte(o+EPR_EXTRUDER_PID_MAX,e->tempControl.pidMax);
+        HAL::eprSetByte(o+EPR_EXTRUDER_DRIVE_MAX,e->tempControl.pidDriveMax);
+        HAL::eprSetByte(o+EPR_EXTRUDER_DRIVE_MIN,e->tempControl.pidDriveMin);
+        HAL::eprSetFloat(o+EPR_EXTRUDER_PID_PGAIN,e->tempControl.pidPGain);
+        HAL::eprSetFloat(o+EPR_EXTRUDER_PID_IGAIN,e->tempControl.pidIGain);
+        HAL::eprSetFloat(o+EPR_EXTRUDER_PID_DGAIN,e->tempControl.pidDGain);
+        HAL::eprSetByte(o+EPR_EXTRUDER_PID_MAX,e->tempControl.pidMax);
 #endif
-    epr_set_long(o+EPR_EXTRUDER_X_OFFSET,e->xOffset);
-    epr_set_long(o+EPR_EXTRUDER_Y_OFFSET,e->yOffset);
-    epr_set_int(o+EPR_EXTRUDER_WATCH_PERIOD,e->watchPeriod);
+        HAL::eprSetInt32(o+EPR_EXTRUDER_X_OFFSET,e->xOffset);
+        HAL::eprSetInt32(o+EPR_EXTRUDER_Y_OFFSET,e->yOffset);
+        HAL::eprSetInt16(o+EPR_EXTRUDER_WATCH_PERIOD,e->watchPeriod);
 #if RETRACT_DURING_HEATUP
-    epr_set_int(o+EPR_EXTRUDER_WAIT_RETRACT_TEMP,e->waitRetractTemperature);
-    epr_set_int(o+EPR_EXTRUDER_WAIT_RETRACT_UNITS,e->waitRetractUnits);
+        HAL::eprSetInt16(o+EPR_EXTRUDER_WAIT_RETRACT_TEMP,e->waitRetractTemperature);
+        HAL::eprSetInt16(o+EPR_EXTRUDER_WAIT_RETRACT_UNITS,e->waitRetractUnits);
 #else
-    epr_set_int(o+EPR_EXTRUDER_WAIT_RETRACT_TEMP,EXT0_WAIT_RETRACT_TEMP);
-    epr_set_int(o+EPR_EXTRUDER_WAIT_RETRACT_UNITS,EXT0_WAIT_RETRACT_UNITS);
+        HAL::eprSetInt16(o+EPR_EXTRUDER_WAIT_RETRACT_TEMP,EXT0_WAIT_RETRACT_TEMP);
+        HAL::eprSetInt16(o+EPR_EXTRUDER_WAIT_RETRACT_UNITS,EXT0_WAIT_RETRACT_UNITS);
 #endif
-    epr_set_byte(o+EPR_EXTRUDER_COOLER_SPEED,e->coolerSpeed);
+        HAL::eprSetByte(o+EPR_EXTRUDER_COOLER_SPEED,e->coolerSpeed);
 #ifdef USE_ADVANCE
 #ifdef ENABLE_QUADRATIC_ADVANCE
-    epr_set_float(o+EPR_EXTRUDER_ADVANCE_K,e->advanceK);
+        HAL::eprSetFloat(o+EPR_EXTRUDER_ADVANCE_K,e->advanceK);
 #else
-    epr_set_float(o+EPR_EXTRUDER_ADVANCE_K,0);
+        HAL::eprSetFloat(o+EPR_EXTRUDER_ADVANCE_K,0);
 #endif
-    epr_set_float(o+EPR_EXTRUDER_ADVANCE_L,e->advanceL);
+        HAL::eprSetFloat(o+EPR_EXTRUDER_ADVANCE_L,e->advanceL);
 #else
-    epr_set_float(o+EPR_EXTRUDER_ADVANCE_K,0);
-    epr_set_float(o+EPR_EXTRUDER_ADVANCE_L,0);
+        HAL::eprSetFloat(o+EPR_EXTRUDER_ADVANCE_K,0);
+        HAL::eprSetFloat(o+EPR_EXTRUDER_ADVANCE_L,0);
 #endif
-  }
-  if(corrupted) {
-    epr_set_long(EPR_PRINTING_TIME,0);
-    epr_set_float(EPR_PRINTING_DISTANCE,0);
-  }
-  // Save version and build checksum
-  epr_set_byte(EPR_VERSION,EEPROM_PROTOCOL_VERSION);
-  epr_set_byte(EPR_INTEGRITY_BYTE,epr_compute_checksum());
+    }
+    if(corrupted)
+    {
+        HAL::eprSetInt32(EPR_PRINTING_TIME,0);
+        HAL::eprSetFloat(EPR_PRINTING_DISTANCE,0);
+        initalizeUncached();
+    }
+    // Save version and build checksum
+    HAL::eprSetByte(EPR_VERSION,EEPROM_PROTOCOL_VERSION);
+    HAL::eprSetByte(EPR_INTEGRITY_BYTE,computeChecksum());
+#endif
 }
-/** \brief Copy data from EEPROM to variables.
-*/
-void epr_eeprom_to_data() {
-  byte version = epr_get_byte(EPR_VERSION); // This is the saved version. Don't copy data not set in older versions!
-  baudrate = epr_get_long(EPR_BAUDRATE);
-  max_inactive_time = epr_get_long(EPR_MAX_INACTIVE_TIME);
-  stepper_inactive_time = epr_get_long(EPR_STEPPER_INACTIVE_TIME);
-//#define EPR_ACCELERATION_TYPE 1
-  axis_steps_per_unit[0] = epr_get_float(EPR_XAXIS_STEPS_PER_MM);
-  axis_steps_per_unit[1] = epr_get_float(EPR_YAXIS_STEPS_PER_MM);
-  axis_steps_per_unit[2] = epr_get_float(EPR_ZAXIS_STEPS_PER_MM);
-  max_feedrate[0] = epr_get_float(EPR_X_MAX_FEEDRATE);
-  max_feedrate[1] = epr_get_float(EPR_Y_MAX_FEEDRATE);
-  max_feedrate[2] = epr_get_float(EPR_Z_MAX_FEEDRATE);
-  homing_feedrate[0] = epr_get_float(EPR_X_HOMING_FEEDRATE);
-  homing_feedrate[1] = epr_get_float(EPR_Y_HOMING_FEEDRATE);
-  homing_feedrate[2] = epr_get_float(EPR_Z_HOMING_FEEDRATE);
-  printer_state.maxJerk = epr_get_float(EPR_MAX_JERK);
-  printer_state.maxZJerk = epr_get_float(EPR_MAX_ZJERK);
-#ifdef RAMP_ACCELERATION
-  max_acceleration_units_per_sq_second[0] = epr_get_float(EPR_X_MAX_ACCEL);
-  max_acceleration_units_per_sq_second[1] = epr_get_float(EPR_Y_MAX_ACCEL);
-  max_acceleration_units_per_sq_second[2] = epr_get_float(EPR_Z_MAX_ACCEL);
-  max_travel_acceleration_units_per_sq_second[0] = epr_get_float(EPR_X_MAX_TRAVEL_ACCEL);
-  max_travel_acceleration_units_per_sq_second[1] = epr_get_float(EPR_Y_MAX_TRAVEL_ACCEL);
-  max_travel_acceleration_units_per_sq_second[2] = epr_get_float(EPR_Z_MAX_TRAVEL_ACCEL);
+void EEPROM::initalizeUncached()
+{
+    HAL::eprSetFloat(EPR_Z_PROBE_HEIGHT,Z_PROBE_HEIGHT);
+    HAL::eprSetFloat(EPR_Z_PROBE_SPEED,Z_PROBE_SPEED);
+    HAL::eprSetFloat(EPR_Z_PROBE_XY_SPEED,Z_PROBE_XY_SPEED);
+    HAL::eprSetFloat(EPR_Z_PROBE_X_OFFSET,Z_PROBE_X_OFFSET);
+    HAL::eprSetFloat(EPR_Z_PROBE_Y_OFFSET,Z_PROBE_Y_OFFSET);
+    HAL::eprSetFloat(EPR_Z_PROBE_X1,Z_PROBE_X1);
+    HAL::eprSetFloat(EPR_Z_PROBE_Y1,Z_PROBE_Y1);
+    HAL::eprSetFloat(EPR_Z_PROBE_X2,Z_PROBE_X2);
+    HAL::eprSetFloat(EPR_Z_PROBE_Y2,Z_PROBE_Y2);
+    HAL::eprSetFloat(EPR_Z_PROBE_X3,Z_PROBE_X3);
+    HAL::eprSetFloat(EPR_Z_PROBE_Y3,Z_PROBE_Y3);
+#if DRIVE_SYSTEM==3
+    HAL::eprSetFloat(EPR_DELTA_DIAGONAL_ROD_LENGTH,DELTA_DIAGONAL_ROD);
+    HAL::eprSetFloat(EPR_DELTA_HORIZONTAL_RADIUS,DELTA_RADIUS);
+    HAL::eprSetInt16(EPR_DELTA_SEGMENTS_PER_SECOND_PRINT,DELTA_SEGMENTS_PER_SECOND_PRINT);
+    HAL::eprSetInt16(EPR_DELTA_SEGMENTS_PER_SECOND_MOVE,DELTA_SEGMENTS_PER_SECOND_MOVE);
+    HAL::eprSetInt16(EPR_DELTA_TOWERX_OFFSET_STEPS,DELTA_X_ENDSTOP_OFFSET_STEPS);
+    HAL::eprSetInt16(EPR_DELTA_TOWERY_OFFSET_STEPS,DELTA_Y_ENDSTOP_OFFSET_STEPS);
+    HAL::eprSetInt16(EPR_DELTA_TOWERZ_OFFSET_STEPS,DELTA_Z_ENDSTOP_OFFSET_STEPS);
+    HAL::eprSetFloat(EPR_DELTA_ALPHA_A,DELTA_ALPHA_A);
+    HAL::eprSetFloat(EPR_DELTA_ALPHA_B,DELTA_ALPHA_B);
+    HAL::eprSetFloat(EPR_DELTA_ALPHA_C,DELTA_ALPHA_C);
+    HAL::eprSetFloat(EPR_DELTA_RADIUS_CORR_A,DELTA_RADIUS_CORRECTION_A);
+    HAL::eprSetFloat(EPR_DELTA_RADIUS_CORR_B,DELTA_RADIUS_CORRECTION_B);
+    HAL::eprSetFloat(EPR_DELTA_RADIUS_CORR_C,DELTA_RADIUS_CORRECTION_C);
 #endif
-#if USE_OPS==1
-  printer_state.opsMode = epr_get_byte(EPR_OPS_MODE);
-  printer_state.opsMoveAfter = epr_get_float(EPR_OPS_MOVE_AFTER);
-  printer_state.opsMinDistance = epr_get_float(EPR_OPS_MIN_DISTANCE);
-  printer_state.opsRetractDistance = epr_get_float(EPR_OPS_RETRACT_DISTANCE);
-  printer_state.opsRetractBacklash = epr_get_float(EPR_OPS_RETRACT_BACKLASH);
+}
+
+void EEPROM::readDataFromEEPROM()
+{
+#if EEPROM_MODE!=0
+    uint8_t version = HAL::eprGetByte(EPR_VERSION); // This is the saved version. Don't copy data not set in older versions!
+    baudrate = HAL::eprGetInt32(EPR_BAUDRATE);
+    maxInactiveTime = HAL::eprGetInt32(EPR_MAX_INACTIVE_TIME);
+    stepperInactiveTime = HAL::eprGetInt32(EPR_STEPPER_INACTIVE_TIME);
+//#define EPR_ACCELERATION_TYPE 1
+    Printer::axisStepsPerMM[0] = HAL::eprGetFloat(EPR_XAXIS_STEPS_PER_MM);
+    Printer::axisStepsPerMM[1] = HAL::eprGetFloat(EPR_YAXIS_STEPS_PER_MM);
+    Printer::axisStepsPerMM[2] = HAL::eprGetFloat(EPR_ZAXIS_STEPS_PER_MM);
+    Printer::maxFeedrate[0] = HAL::eprGetFloat(EPR_X_MAX_FEEDRATE);
+    Printer::maxFeedrate[1] = HAL::eprGetFloat(EPR_Y_MAX_FEEDRATE);
+    Printer::maxFeedrate[2] = HAL::eprGetFloat(EPR_Z_MAX_FEEDRATE);
+    Printer::homingFeedrate[0] = HAL::eprGetFloat(EPR_X_HOMING_FEEDRATE);
+    Printer::homingFeedrate[1] = HAL::eprGetFloat(EPR_Y_HOMING_FEEDRATE);
+    Printer::homingFeedrate[2] = HAL::eprGetFloat(EPR_Z_HOMING_FEEDRATE);
+    Printer::maxJerk = HAL::eprGetFloat(EPR_MAX_JERK);
+#if DRIVE_SYSTEM!=3
+    Printer::maxZJerk = HAL::eprGetFloat(EPR_MAX_ZJERK);
+#endif
+#ifdef RAMP_ACCELERATION
+    Printer::maxAccelerationMMPerSquareSecond[0] = HAL::eprGetFloat(EPR_X_MAX_ACCEL);
+    Printer::maxAccelerationMMPerSquareSecond[1] = HAL::eprGetFloat(EPR_Y_MAX_ACCEL);
+    Printer::maxAccelerationMMPerSquareSecond[2] = HAL::eprGetFloat(EPR_Z_MAX_ACCEL);
+    Printer::maxTravelAccelerationMMPerSquareSecond[0] = HAL::eprGetFloat(EPR_X_MAX_TRAVEL_ACCEL);
+    Printer::maxTravelAccelerationMMPerSquareSecond[1] = HAL::eprGetFloat(EPR_Y_MAX_TRAVEL_ACCEL);
+    Printer::maxTravelAccelerationMMPerSquareSecond[2] = HAL::eprGetFloat(EPR_Z_MAX_TRAVEL_ACCEL);
 #endif
 #if HAVE_HEATED_BED
-  heatedBedController.heatManager= epr_get_byte(EPR_BED_HEAT_MANAGER);
+    heatedBedController.heatManager= HAL::eprGetByte(EPR_BED_HEAT_MANAGER);
 #ifdef TEMP_PID
-  heatedBedController.pidDriveMax = epr_get_byte(EPR_BED_DRIVE_MAX);
-  heatedBedController.pidDriveMin = epr_get_byte(EPR_BED_DRIVE_MIN);
-  heatedBedController.pidPGain = epr_get_float(EPR_BED_PID_PGAIN);
-  heatedBedController.pidIGain = epr_get_float(EPR_BED_PID_IGAIN);
-  heatedBedController.pidDGain = epr_get_float(EPR_BED_PID_DGAIN);
-  heatedBedController.pidMax = epr_get_byte(EPR_BED_PID_MAX);
+    heatedBedController.pidDriveMax = HAL::eprGetByte(EPR_BED_DRIVE_MAX);
+    heatedBedController.pidDriveMin = HAL::eprGetByte(EPR_BED_DRIVE_MIN);
+    heatedBedController.pidPGain = HAL::eprGetFloat(EPR_BED_PID_PGAIN);
+    heatedBedController.pidIGain = HAL::eprGetFloat(EPR_BED_PID_IGAIN);
+    heatedBedController.pidDGain = HAL::eprGetFloat(EPR_BED_PID_DGAIN);
+    heatedBedController.pidMax = HAL::eprGetByte(EPR_BED_PID_MAX);
 #endif
 #endif
-  printer_state.xMin = epr_get_float(EPR_X_HOME_OFFSET);
-  printer_state.yMin = epr_get_float(EPR_Y_HOME_OFFSET);
-  printer_state.zMin = epr_get_float(EPR_Z_HOME_OFFSET);
-  printer_state.xLength = epr_get_float(EPR_X_LENGTH);
-  printer_state.yLength = epr_get_float(EPR_Y_LENGTH);
-  printer_state.zLength = epr_get_float(EPR_Z_LENGTH);
+    Printer::xMin = HAL::eprGetFloat(EPR_X_HOME_OFFSET);
+    Printer::yMin = HAL::eprGetFloat(EPR_Y_HOME_OFFSET);
+    Printer::zMin = HAL::eprGetFloat(EPR_Z_HOME_OFFSET);
+    Printer::xLength = HAL::eprGetFloat(EPR_X_LENGTH);
+    Printer::yLength = HAL::eprGetFloat(EPR_Y_LENGTH);
+    Printer::zLength = HAL::eprGetFloat(EPR_Z_LENGTH);
 #if ENABLE_BACKLASH_COMPENSATION
-  printer_state.backlashX = epr_get_float(EPR_BACKLASH_X);
-  printer_state.backlashY = epr_get_float(EPR_BACKLASH_Y);
-  printer_state.backlashZ = epr_get_float(EPR_BACKLASH_Z);
+    Printer::backlashX = HAL::eprGetFloat(EPR_BACKLASH_X);
+    Printer::backlashY = HAL::eprGetFloat(EPR_BACKLASH_Y);
+    Printer::backlashZ = HAL::eprGetFloat(EPR_BACKLASH_Z);
 #endif
-  // now the extruder
-  for(byte i=0;i<NUM_EXTRUDER;i++) {
-    int o=i*EEPROM_EXTRUDER_LENGTH+EEPROM_EXTRUDER_OFFSET;
-    Extruder *e = &extruder[i];
-    e->stepsPerMM = epr_get_float(o+EPR_EXTRUDER_STEPS_PER_MM);
-    e->maxFeedrate = epr_get_float(o+EPR_EXTRUDER_MAX_FEEDRATE);
-    e->maxStartFeedrate = epr_get_float(o+EPR_EXTRUDER_MAX_START_FEEDRATE);
-    e->maxAcceleration = epr_get_float(o+EPR_EXTRUDER_MAX_ACCELERATION);
-    e->tempControl.heatManager = epr_get_byte(o+EPR_EXTRUDER_HEAT_MANAGER);
+#if FEATURE_AUTOLEVEL
+    if(version>2)
+    {
+        for(uint8_t i=0; i<9; i++)
+            Printer::autolevelTransformation[i] = HAL::eprGetFloat(EPR_AUTOLEVEL_MATRIX+((int)i)<<2);
+        Printer::setAutolevelActive(HAL::eprGetByte(EPR_AUTOLEVEL_ACTIVE));
+        //Com::printArrayFLN(Com::tInfo,Printer::autolevelTransformation,9,6);
+    }
+#endif
+    // now the extruder
+    for(uint8_t i=0; i<NUM_EXTRUDER; i++)
+    {
+#if FEATURE_WATCHDOG
+    HAL::pingWatchdog();
+#endif // FEATURE_WATCHDOG
+
+        int o=i*EEPROM_EXTRUDER_LENGTH+EEPROM_EXTRUDER_OFFSET;
+        Extruder *e = &extruder[i];
+        e->stepsPerMM = HAL::eprGetFloat(o+EPR_EXTRUDER_STEPS_PER_MM);
+        e->maxFeedrate = HAL::eprGetFloat(o+EPR_EXTRUDER_MAX_FEEDRATE);
+        e->maxStartFeedrate = HAL::eprGetFloat(o+EPR_EXTRUDER_MAX_START_FEEDRATE);
+        e->maxAcceleration = HAL::eprGetFloat(o+EPR_EXTRUDER_MAX_ACCELERATION);
+        e->tempControl.heatManager = HAL::eprGetByte(o+EPR_EXTRUDER_HEAT_MANAGER);
 #ifdef TEMP_PID
-    e->tempControl.pidDriveMax = epr_get_byte(o+EPR_EXTRUDER_DRIVE_MAX);
-    e->tempControl.pidDriveMin = epr_get_byte(o+EPR_EXTRUDER_DRIVE_MIN);
-    e->tempControl.pidPGain = epr_get_float(o+EPR_EXTRUDER_PID_PGAIN);
-    e->tempControl.pidIGain = epr_get_float(o+EPR_EXTRUDER_PID_IGAIN);
-    e->tempControl.pidDGain = epr_get_float(o+EPR_EXTRUDER_PID_DGAIN);
-    e->tempControl.pidMax = epr_get_byte(o+EPR_EXTRUDER_PID_MAX);
+        e->tempControl.pidDriveMax = HAL::eprGetByte(o+EPR_EXTRUDER_DRIVE_MAX);
+        e->tempControl.pidDriveMin = HAL::eprGetByte(o+EPR_EXTRUDER_DRIVE_MIN);
+        e->tempControl.pidPGain = HAL::eprGetFloat(o+EPR_EXTRUDER_PID_PGAIN);
+        e->tempControl.pidIGain = HAL::eprGetFloat(o+EPR_EXTRUDER_PID_IGAIN);
+        e->tempControl.pidDGain = HAL::eprGetFloat(o+EPR_EXTRUDER_PID_DGAIN);
+        e->tempControl.pidMax = HAL::eprGetByte(o+EPR_EXTRUDER_PID_MAX);
 #endif
-    e->xOffset = epr_get_long(o+EPR_EXTRUDER_X_OFFSET);
-    e->yOffset = epr_get_long(o+EPR_EXTRUDER_Y_OFFSET);
-    e->watchPeriod = epr_get_int(o+EPR_EXTRUDER_WATCH_PERIOD);
+        e->xOffset = HAL::eprGetInt32(o+EPR_EXTRUDER_X_OFFSET);
+        e->yOffset = HAL::eprGetInt32(o+EPR_EXTRUDER_Y_OFFSET);
+        e->watchPeriod = HAL::eprGetInt16(o+EPR_EXTRUDER_WATCH_PERIOD);
 #if RETRACT_DURING_HEATUP
-    e->waitRetractTemperature = epr_get_int(o+EPR_EXTRUDER_WAIT_RETRACT_TEMP);
-    e->waitRetractUnits = epr_get_int(o+EPR_EXTRUDER_WAIT_RETRACT_UNITS);
+        e->waitRetractTemperature = HAL::eprGetInt16(o+EPR_EXTRUDER_WAIT_RETRACT_TEMP);
+        e->waitRetractUnits = HAL::eprGetInt16(o+EPR_EXTRUDER_WAIT_RETRACT_UNITS);
 #endif
- #ifdef USE_ADVANCE
- #ifdef ENABLE_QUADRATIC_ADVANCE
-    e->advanceK = epr_get_float(o+EPR_EXTRUDER_ADVANCE_K);
+#ifdef USE_ADVANCE
+#ifdef ENABLE_QUADRATIC_ADVANCE
+        e->advanceK = HAL::eprGetFloat(o+EPR_EXTRUDER_ADVANCE_K);
 #endif
-    e->advanceL = epr_get_float(o+EPR_EXTRUDER_ADVANCE_L);
- #endif
-    if(version>1)
-      e->coolerSpeed = epr_get_byte(o+EPR_EXTRUDER_COOLER_SPEED);
-  }
-  if(version!=EEPROM_PROTOCOL_VERSION) {
-    OUT_P_LN("Protocol version changed, upgrading");
-    epr_data_to_eeprom(false); // Store new fields for changed version
-  }
-  extruder_select(current_extruder->id);
-  update_ramps_parameter();
-  initHeatedBed();
+        e->advanceL = HAL::eprGetFloat(o+EPR_EXTRUDER_ADVANCE_L);
+#endif
+        if(version>1)
+            e->coolerSpeed = HAL::eprGetByte(o+EPR_EXTRUDER_COOLER_SPEED);
+    }
+    if(version!=EEPROM_PROTOCOL_VERSION)
+    {
+        Com::printInfoFLN(Com::tEPRProtocolChanged);
+        if(version<3)
+        {
+            HAL::eprSetFloat(EPR_Z_PROBE_HEIGHT,Z_PROBE_HEIGHT);
+            HAL::eprSetFloat(EPR_Z_PROBE_SPEED,Z_PROBE_SPEED);
+            HAL::eprSetFloat(EPR_Z_PROBE_XY_SPEED,Z_PROBE_XY_SPEED);
+            HAL::eprSetFloat(EPR_Z_PROBE_X_OFFSET,Z_PROBE_X_OFFSET);
+            HAL::eprSetFloat(EPR_Z_PROBE_Y_OFFSET,Z_PROBE_Y_OFFSET);
+            HAL::eprSetFloat(EPR_Z_PROBE_X1,Z_PROBE_X1);
+            HAL::eprSetFloat(EPR_Z_PROBE_Y1,Z_PROBE_Y1);
+            HAL::eprSetFloat(EPR_Z_PROBE_X2,Z_PROBE_X2);
+            HAL::eprSetFloat(EPR_Z_PROBE_Y2,Z_PROBE_Y2);
+            HAL::eprSetFloat(EPR_Z_PROBE_X3,Z_PROBE_X3);
+            HAL::eprSetFloat(EPR_Z_PROBE_Y3,Z_PROBE_Y3);
+        }
+        if(version<4)
+        {
+#if DRIVE_SYSTEM==3
+            HAL::eprSetFloat(EPR_DELTA_DIAGONAL_ROD_LENGTH,DELTA_DIAGONAL_ROD);
+            HAL::eprSetFloat(EPR_DELTA_HORIZONTAL_RADIUS,DELTA_RADIUS);
+            HAL::eprSetInt16(EPR_DELTA_SEGMENTS_PER_SECOND_PRINT,DELTA_SEGMENTS_PER_SECOND_PRINT);
+            HAL::eprSetInt16(EPR_DELTA_SEGMENTS_PER_SECOND_MOVE,DELTA_SEGMENTS_PER_SECOND_MOVE);
+            HAL::eprSetInt16(EPR_DELTA_TOWERX_OFFSET_STEPS,DELTA_X_ENDSTOP_OFFSET_STEPS);
+            HAL::eprSetInt16(EPR_DELTA_TOWERY_OFFSET_STEPS,DELTA_Y_ENDSTOP_OFFSET_STEPS);
+            HAL::eprSetInt16(EPR_DELTA_TOWERZ_OFFSET_STEPS,DELTA_Z_ENDSTOP_OFFSET_STEPS);
+#endif
+        }
+#if DRIVE_SYSTEM==3
+        if(version<5) {
+            HAL::eprSetFloat(EPR_DELTA_ALPHA_A,DELTA_ALPHA_A);
+            HAL::eprSetFloat(EPR_DELTA_ALPHA_B,DELTA_ALPHA_B);
+            HAL::eprSetFloat(EPR_DELTA_ALPHA_C,DELTA_ALPHA_C);
+        }
+        if(version<6) {
+            HAL::eprSetFloat(EPR_DELTA_RADIUS_CORR_A,DELTA_RADIUS_CORRECTION_A);
+            HAL::eprSetFloat(EPR_DELTA_RADIUS_CORR_B,DELTA_RADIUS_CORRECTION_B);
+            HAL::eprSetFloat(EPR_DELTA_RADIUS_CORR_C,DELTA_RADIUS_CORRECTION_C);
+        }
+#endif
+        storeDataIntoEEPROM(false); // Store new fields for changed version
+    }
+    Printer::updateDerivedParameter();
+    Extruder::initHeatedBed();
+#endif
 }
-#endif
-void epr_init_baudrate() {
+
+void EEPROM::initBaudrate()
+{
 #if EEPROM_MODE!=0
-  if(epr_get_byte(EPR_MAGIC_BYTE)==EEPROM_MODE) {
-    baudrate = epr_get_long(EPR_BAUDRATE);    
-  }
-#endif
-}
-void epr_init() {
-#if EEPROM_MODE!=0
-  byte check = epr_compute_checksum();
-  byte storedcheck = epr_get_byte(EPR_INTEGRITY_BYTE);
-  if(epr_get_byte(EPR_MAGIC_BYTE)==EEPROM_MODE && storedcheck==check) {
-    epr_eeprom_to_data();
-  } else {
-    epr_set_byte(EPR_MAGIC_BYTE,EEPROM_MODE); // Make datachange permanent
-    epr_data_to_eeprom(storedcheck!=check);
-  }
+    if(HAL::eprGetByte(EPR_MAGIC_BYTE)==EEPROM_MODE)
+    {
+        baudrate = HAL::eprGetInt32(EPR_BAUDRATE);
+    }
 #endif
 }
-/**
-*/
-void epr_update_usage() {
+
+void EEPROM::init()
+{
 #if EEPROM_MODE!=0
-  if(printer_state.filamentPrinted==0) return; // No miles only enabled
-  unsigned long seconds = (millis()-printer_state.msecondsPrinting)/1000;
-  seconds += epr_get_long(EPR_PRINTING_TIME);
-  epr_set_long(EPR_PRINTING_TIME,seconds);
-  epr_set_float(EPR_PRINTING_DISTANCE,epr_get_float(EPR_PRINTING_DISTANCE)+printer_state.filamentPrinted*0.001);
-  OUT_P_F_LN("Adding filament:",printer_state.filamentPrinted);
-  printer_state.filamentPrinted = 0;
-  printer_state.msecondsPrinting = millis();
-  byte newcheck = epr_compute_checksum();
-  if(newcheck!=epr_get_byte(EPR_INTEGRITY_BYTE))
-    epr_set_byte(EPR_INTEGRITY_BYTE,newcheck);
+    uint8_t check = computeChecksum();
+    uint8_t storedcheck = HAL::eprGetByte(EPR_INTEGRITY_BYTE);
+    if(HAL::eprGetByte(EPR_MAGIC_BYTE)==EEPROM_MODE && storedcheck==check)
+    {
+        readDataFromEEPROM();
+    }
+    else
+    {
+        HAL::eprSetByte(EPR_MAGIC_BYTE,EEPROM_MODE); // Make datachange permanent
+        initalizeUncached();
+        storeDataIntoEEPROM(storedcheck!=check);
+    }
+#endif
+}
+
+void EEPROM::updatePrinterUsage()
+{
+#if EEPROM_MODE!=0
+    if(Printer::filamentPrinted==0) return; // No miles only enabled
+    unsigned long seconds = (HAL::timeInMilliseconds()-Printer::msecondsPrinting)/1000;
+    seconds += HAL::eprGetInt32(EPR_PRINTING_TIME);
+    HAL::eprSetInt32(EPR_PRINTING_TIME,seconds);
+    HAL::eprSetFloat(EPR_PRINTING_DISTANCE,HAL::eprGetFloat(EPR_PRINTING_DISTANCE)+Printer::filamentPrinted*0.001);
+    Printer::filamentPrinted = 0;
+    Printer::msecondsPrinting = HAL::timeInMilliseconds();
+    uint8_t newcheck = computeChecksum();
+    if(newcheck!=HAL::eprGetByte(EPR_INTEGRITY_BYTE))
+        HAL::eprSetByte(EPR_INTEGRITY_BYTE,newcheck);
+    Commands::reportPrinterUsage();
 #endif
 }
 
@@ -627,100 +656,203 @@ With
 - value = The value currently stored
 - description = Definition of the value
 */
-void epr_output_settings() {
+void EEPROM::writeSettings()
+{
 #if EEPROM_MODE!=0
-  epr_out_long(EPR_BAUDRATE,PSTR("Baudrate"));
-  epr_out_float(EPR_PRINTING_DISTANCE,PSTR("Filament printed [m]"));
-  epr_out_long(EPR_PRINTING_TIME,PSTR("Printer active [s]"));
-  epr_out_long(EPR_MAX_INACTIVE_TIME,PSTR("Max. inactive time [ms,0=off]"));
-  epr_out_long(EPR_STEPPER_INACTIVE_TIME,PSTR("Stop stepper after inactivity [ms,0=off]"));
+    writeLong(EPR_BAUDRATE,Com::tEPRBaudrate);
+    writeFloat(EPR_PRINTING_DISTANCE,Com::tEPRFilamentPrinted);
+    writeLong(EPR_PRINTING_TIME,Com::tEPRPrinterActive);
+    writeLong(EPR_MAX_INACTIVE_TIME,Com::tEPRMaxInactiveTime);
+    writeLong(EPR_STEPPER_INACTIVE_TIME,Com::tEPRStopAfterInactivty);
 //#define EPR_ACCELERATION_TYPE 1
-  epr_out_float(EPR_XAXIS_STEPS_PER_MM,PSTR("X-axis steps per mm"));
-  epr_out_float(EPR_YAXIS_STEPS_PER_MM,PSTR("Y-axis steps per mm"));
-  epr_out_float(EPR_ZAXIS_STEPS_PER_MM,PSTR("Z-axis steps per mm"));
-  epr_out_float(EPR_X_MAX_FEEDRATE,PSTR("X-axis max. feedrate [mm/s]"));
-  epr_out_float(EPR_Y_MAX_FEEDRATE,PSTR("Y-axis max. feedrate [mm/s]"));
-  epr_out_float(EPR_Z_MAX_FEEDRATE,PSTR("Z-axis max. feedrate [mm/s]"));
-  epr_out_float(EPR_X_HOMING_FEEDRATE,PSTR("X-axis homing feedrate [mm/s]"));
-  epr_out_float(EPR_Y_HOMING_FEEDRATE,PSTR("Y-axis homing feedrate [mm/s]"));
-  epr_out_float(EPR_Z_HOMING_FEEDRATE,PSTR("Z-axis homing feedrate [mm/s]"));
-  epr_out_float(EPR_MAX_JERK,PSTR("Max. jerk [mm/s]"));
-  epr_out_float(EPR_MAX_ZJERK,PSTR("Max. Z-jerk [mm/s]"));
-  epr_out_float(EPR_X_HOME_OFFSET,PSTR("X home pos [mm]"));
-  epr_out_float(EPR_Y_HOME_OFFSET,PSTR("Y home pos [mm]"));
-  epr_out_float(EPR_Z_HOME_OFFSET,PSTR("Z home pos [mm]"));
-  epr_out_float(EPR_X_LENGTH,PSTR("X max length [mm]"));
-  epr_out_float(EPR_Y_LENGTH,PSTR("Y max length [mm]"));
-  epr_out_float(EPR_Z_LENGTH,PSTR("Z max length [mm]"));
+#if DRIVE_SYSTEM!=3
+    writeFloat(EPR_XAXIS_STEPS_PER_MM,Com::tEPRXStepsPerMM,4);
+    writeFloat(EPR_YAXIS_STEPS_PER_MM,Com::tEPRYStepsPerMM,4);
+#endif
+    writeFloat(EPR_ZAXIS_STEPS_PER_MM,Com::tEPRZStepsPerMM,4);
+#if DRIVE_SYSTEM!=3
+    writeFloat(EPR_X_MAX_FEEDRATE,Com::tEPRXMaxFeedrate);
+    writeFloat(EPR_Y_MAX_FEEDRATE,Com::tEPRYMaxFeedrate);
+#endif
+    writeFloat(EPR_Z_MAX_FEEDRATE,Com::tEPRZMaxFeedrate);
+#if DRIVE_SYSTEM!=3
+    writeFloat(EPR_X_HOMING_FEEDRATE,Com::tEPRXHomingFeedrate);
+    writeFloat(EPR_Y_HOMING_FEEDRATE,Com::tEPRYHomingFeedrate);
+#endif
+    writeFloat(EPR_Z_HOMING_FEEDRATE,Com::tEPRZHomingFeedrate);
+    writeFloat(EPR_MAX_JERK,Com::tEPRMaxJerk);
+#if DRIVE_SYSTEM!=3
+    writeFloat(EPR_MAX_ZJERK,Com::tEPRMaxZJerk);
+#endif
+    writeFloat(EPR_X_HOME_OFFSET,Com::tEPRXHomePos);
+    writeFloat(EPR_Y_HOME_OFFSET,Com::tEPRYHomePos);
+    writeFloat(EPR_Z_HOME_OFFSET,Com::tEPRZHomePos);
+    writeFloat(EPR_X_LENGTH,Com::tEPRXMaxLength);
+    writeFloat(EPR_Y_LENGTH,Com::tEPRYMaxLength);
+    writeFloat(EPR_Z_LENGTH,Com::tEPRZMaxLength);
 #if ENABLE_BACKLASH_COMPENSATION
-  epr_out_float(EPR_BACKLASH_X,PSTR("X backlash [mm]"));
-  epr_out_float(EPR_BACKLASH_Y,PSTR("Y backlash [mm]"));
-  epr_out_float(EPR_BACKLASH_Z,PSTR("Z backlash [mm]"));
+    writeFloat(EPR_BACKLASH_X,Com::tEPRXBacklash);
+    writeFloat(EPR_BACKLASH_Y,Com::tEPRYBacklash);
+    writeFloat(EPR_BACKLASH_Z,Com::tEPRZBacklash);
 #endif
 
 #ifdef RAMP_ACCELERATION
-  //epr_out_float(EPR_X_MAX_START_SPEED,PSTR("X-axis start speed [mm/s]"));
-  //epr_out_float(EPR_Y_MAX_START_SPEED,PSTR("Y-axis start speed [mm/s]"));
-  //epr_out_float(EPR_Z_MAX_START_SPEED,PSTR("Z-axis start speed [mm/s]"));
-  epr_out_float(EPR_X_MAX_ACCEL,PSTR("X-axis acceleration [mm/s^2]"));
-  epr_out_float(EPR_Y_MAX_ACCEL,PSTR("Y-axis acceleration [mm/s^2]"));
-  epr_out_float(EPR_Z_MAX_ACCEL,PSTR("Z-axis acceleration [mm/s^2]"));
-  epr_out_float(EPR_X_MAX_TRAVEL_ACCEL,PSTR("X-axis travel acceleration [mm/s^2]"));
-  epr_out_float(EPR_Y_MAX_TRAVEL_ACCEL,PSTR("Y-axis travel acceleration [mm/s^2]"));
-  epr_out_float(EPR_Z_MAX_TRAVEL_ACCEL,PSTR("Z-axis travel acceleration [mm/s^2]"));
+    //epr_out_float(EPR_X_MAX_START_SPEED,PSTR("X-axis start speed [mm/s]"));
+    //epr_out_float(EPR_Y_MAX_START_SPEED,PSTR("Y-axis start speed [mm/s]"));
+    //epr_out_float(EPR_Z_MAX_START_SPEED,PSTR("Z-axis start speed [mm/s]"));
+#if DRIVE_SYSTEM==4
+    writeFloat(EPR_DELTA_DIAGONAL_ROD_LENGTH,Com::tEPRDiagonalRodLength);
 #endif
-#if USE_OPS==1
-  epr_out_byte(EPR_OPS_MODE,PSTR("OPS operation mode [0=Off,1=Classic,2=Fast]"));
-  epr_out_float(EPR_OPS_MOVE_AFTER,PSTR("OPS move after x% retract [%]"));
-  epr_out_float(EPR_OPS_MIN_DISTANCE,PSTR("OPS min. distance for fil. retraction [mm]"));
-  epr_out_float(EPR_OPS_RETRACT_DISTANCE,PSTR("OPS retraction length [mm]"));
-  epr_out_float(EPR_OPS_RETRACT_BACKLASH,PSTR("OPS retraction backlash [mm]"));
+#if DRIVE_SYSTEM==3
+    writeFloat(EPR_Z_MAX_ACCEL,Com::tEPRZAcceleration);
+    writeFloat(EPR_Z_MAX_TRAVEL_ACCEL,Com::tEPRZTravelAcceleration);
+    writeFloat(EPR_DELTA_DIAGONAL_ROD_LENGTH,Com::tEPRDiagonalRodLength);
+    writeFloat(EPR_DELTA_HORIZONTAL_RADIUS,Com::tEPRHorizontalRadius);
+    writeInt(EPR_DELTA_SEGMENTS_PER_SECOND_MOVE,Com::tEPRSegmentsPerSecondTravel);
+    writeInt(EPR_DELTA_SEGMENTS_PER_SECOND_PRINT,Com::tEPRSegmentsPerSecondPrint);
+    writeInt(EPR_DELTA_TOWERX_OFFSET_STEPS,Com::tEPRTowerXOffset);
+    writeInt(EPR_DELTA_TOWERY_OFFSET_STEPS,Com::tEPRTowerYOffset);
+    writeInt(EPR_DELTA_TOWERZ_OFFSET_STEPS,Com::tEPRTowerZOffset);
+    writeFloat(EPR_DELTA_ALPHA_A,Com::tDeltaAlphaA);
+    writeFloat(EPR_DELTA_ALPHA_B,Com::tDeltaAlphaB);
+    writeFloat(EPR_DELTA_ALPHA_C,Com::tDeltaAlphaC);
+    writeFloat(EPR_DELTA_RADIUS_CORR_A,Com::tDeltaRadiusCorrectionA);
+    writeFloat(EPR_DELTA_RADIUS_CORR_B,Com::tDeltaRadiusCorrectionB);
+    writeFloat(EPR_DELTA_RADIUS_CORR_C,Com::tDeltaRadiusCorrectionC);
+#else
+    writeFloat(EPR_X_MAX_ACCEL,Com::tEPRXAcceleration);
+    writeFloat(EPR_Y_MAX_ACCEL,Com::tEPRYAcceleration);
+    writeFloat(EPR_Z_MAX_ACCEL,Com::tEPRZAcceleration);
+    writeFloat(EPR_X_MAX_TRAVEL_ACCEL,Com::tEPRXTravelAcceleration);
+    writeFloat(EPR_Y_MAX_TRAVEL_ACCEL,Com::tEPRYTravelAcceleration);
+    writeFloat(EPR_Z_MAX_TRAVEL_ACCEL,Com::tEPRZTravelAcceleration);
+#endif
+#endif
+#if FEATURE_Z_PROBE
+    writeFloat(EPR_Z_PROBE_HEIGHT,Com::tZProbeHeight);
+    writeFloat(EPR_Z_PROBE_SPEED,Com::tZProbeSpeed);
+    writeFloat(EPR_Z_PROBE_XY_SPEED,Com::tZProbeSpeedXY);
+    writeFloat(EPR_Z_PROBE_X_OFFSET,Com::tZProbeOffsetX);
+    writeFloat(EPR_Z_PROBE_Y_OFFSET,Com::tZProbeOffsetY);
+    writeFloat(EPR_Z_PROBE_X1,Com::tZProbeX1);
+    writeFloat(EPR_Z_PROBE_Y1,Com::tZProbeY1);
+    writeFloat(EPR_Z_PROBE_X2,Com::tZProbeX2);
+    writeFloat(EPR_Z_PROBE_Y2,Com::tZProbeY2);
+    writeFloat(EPR_Z_PROBE_X3,Com::tZProbeX3);
+    writeFloat(EPR_Z_PROBE_Y3,Com::tZProbeY3);
+#endif
+#if FEATURE_AUTOLEVEL
+    writeByte(EPR_AUTOLEVEL_ACTIVE,Com::tAutolevelActive);
 #endif
 #if HAVE_HEATED_BED
-  epr_out_byte(EPR_BED_HEAT_MANAGER,PSTR("Bed Heat Manager [0-2]"));
+    writeByte(EPR_BED_HEAT_MANAGER,Com::tEPRBedHeatManager);
 #ifdef TEMP_PID
-  epr_out_byte(EPR_BED_DRIVE_MAX,PSTR("Bed PID drive max"));
-  epr_out_byte(EPR_BED_DRIVE_MIN,PSTR("Bed PID drive min"));
-  epr_out_float(EPR_BED_PID_PGAIN,PSTR("Bed PID P-gain"));
-  epr_out_float(EPR_BED_PID_IGAIN,PSTR("Bed PID I-gain"));
-  epr_out_float(EPR_BED_PID_DGAIN,PSTR("Bed PID D-gain"));
-  epr_out_byte(EPR_BED_PID_MAX,PSTR("Bed PID max value [0-255]"));
+    writeByte(EPR_BED_DRIVE_MAX,Com::tEPRBedPIDDriveMax);
+    writeByte(EPR_BED_DRIVE_MIN,Com::tEPRBedPIDDriveMin);
+    writeFloat(EPR_BED_PID_PGAIN,Com::tEPRBedPGain);
+    writeFloat(EPR_BED_PID_IGAIN,Com::tEPRBedIGain);
+    writeFloat(EPR_BED_PID_DGAIN,Com::tEPRBedDGain);
+    writeByte(EPR_BED_PID_MAX,Com::tEPRBedPISMaxValue);
 #endif
 #endif
-  // now the extruder
-  for(byte i=0;i<NUM_EXTRUDER;i++) {
-    int o=i*EEPROM_EXTRUDER_LENGTH+EEPROM_EXTRUDER_OFFSET;
-    Extruder *e = &extruder[i];
-    epr_out_float(o+EPR_EXTRUDER_STEPS_PER_MM,PSTR("steps per mm"));
-    epr_out_float(o+EPR_EXTRUDER_MAX_FEEDRATE,PSTR("max. feedrate [mm/s]"));
-    epr_out_float(o+EPR_EXTRUDER_MAX_START_FEEDRATE,PSTR("start feedrate [mm/s]"));
-    epr_out_float(o+EPR_EXTRUDER_MAX_ACCELERATION,PSTR("acceleration [mm/s^2]"));
-    epr_out_byte(o+EPR_EXTRUDER_HEAT_MANAGER,PSTR("heat manager [0-1]"));
+    // now the extruder
+    for(uint8_t i=0; i<NUM_EXTRUDER; i++)
+    {
+        int o=i*EEPROM_EXTRUDER_LENGTH+EEPROM_EXTRUDER_OFFSET;
+        Extruder *e = &extruder[i];
+        writeFloat(o+EPR_EXTRUDER_STEPS_PER_MM,Com::tEPRStepsPerMM);
+        writeFloat(o+EPR_EXTRUDER_MAX_FEEDRATE,Com::tEPRMaxFeedrate);
+        writeFloat(o+EPR_EXTRUDER_MAX_START_FEEDRATE,Com::tEPRStartFeedrate);
+        writeFloat(o+EPR_EXTRUDER_MAX_ACCELERATION,Com::tEPRAcceleration);
+        writeByte(o+EPR_EXTRUDER_HEAT_MANAGER,Com::tEPRHeatManager);
 #ifdef TEMP_PID
-    epr_out_byte(o+EPR_EXTRUDER_DRIVE_MAX,PSTR("PID drive max"));
-    epr_out_byte(o+EPR_EXTRUDER_DRIVE_MIN,PSTR("PID drive min"));
-    epr_out_float(o+EPR_EXTRUDER_PID_PGAIN,PSTR("PID P-gain"));
-    epr_out_float(o+EPR_EXTRUDER_PID_IGAIN,PSTR("PID I-gain"));
-    epr_out_float(o+EPR_EXTRUDER_PID_DGAIN,PSTR("PID D-gain"));
-    epr_out_byte(o+EPR_EXTRUDER_PID_MAX,PSTR("PID max value [0-255]"));
+        writeByte(o+EPR_EXTRUDER_DRIVE_MAX,Com::tEPRDriveMax);
+        writeByte(o+EPR_EXTRUDER_DRIVE_MIN,Com::tEPRDriveMin);
+        writeFloat(o+EPR_EXTRUDER_PID_PGAIN,Com::tEPRPGain,4);
+        writeFloat(o+EPR_EXTRUDER_PID_IGAIN,Com::tEPRIGain,4);
+        writeFloat(o+EPR_EXTRUDER_PID_DGAIN,Com::tEPRDGain,4);
+        writeByte(o+EPR_EXTRUDER_PID_MAX,Com::tEPRPIDMaxValue);
 #endif
-    epr_out_long(o+EPR_EXTRUDER_X_OFFSET,PSTR("X-offset [steps]"));
-    epr_out_long(o+EPR_EXTRUDER_Y_OFFSET,PSTR("Y-offset [steps]"));
-    epr_out_int(o+EPR_EXTRUDER_WATCH_PERIOD,PSTR("temp. stabilize time [s]"));
+        writeLong(o+EPR_EXTRUDER_X_OFFSET,Com::tEPRXOffset);
+        writeLong(o+EPR_EXTRUDER_Y_OFFSET,Com::tEPRYOffset);
+        writeInt(o+EPR_EXTRUDER_WATCH_PERIOD,Com::tEPRStabilizeTime);
 #if RETRACT_DURING_HEATUP
-    epr_out_int(o+EPR_EXTRUDER_WAIT_RETRACT_TEMP,PSTR("temp. for retraction when heating [C]"));
-    epr_out_int(o+EPR_EXTRUDER_WAIT_RETRACT_UNITS,PSTR("distance to retract when heating [mm]"));
+        writeInt(o+EPR_EXTRUDER_WAIT_RETRACT_TEMP,Com::tEPRRetractionWhenHeating);
+        writeInt(o+EPR_EXTRUDER_WAIT_RETRACT_UNITS,Com::tEPRDistanceRetractHeating);
 #endif
-    epr_out_byte(o+EPR_EXTRUDER_COOLER_SPEED,PSTR("extruder cooler speed [0-255]"));
+        writeByte(o+EPR_EXTRUDER_COOLER_SPEED,Com::tEPRExtruderCoolerSpeed);
 #ifdef USE_ADVANCE
 #ifdef ENABLE_QUADRATIC_ADVANCE
-    epr_out_float(o+EPR_EXTRUDER_ADVANCE_K,PSTR("advance K [0=off]"));
+        writeFloat(o+EPR_EXTRUDER_ADVANCE_K,Com::tEPRAdvanceK);
 #endif
-    epr_out_float(o+EPR_EXTRUDER_ADVANCE_L,PSTR("advance L [0=off]"));
-#endif    
-  }
+        writeFloat(o+EPR_EXTRUDER_ADVANCE_L,Com::tEPRAdvanceL);
+#endif
+    }
 #else
-  out.println_P(PSTR("No EEPROM support compiled."));
+    Com::printErrorF(Com::tNoEEPROMSupport);
 #endif
 }
+
+#if EEPROM_MODE!=0
+
+uint8_t EEPROM::computeChecksum()
+{
+    unsigned int i;
+    uint8_t checksum=0;
+    for(i=0; i<2048; i++)
+    {
+        if(i==EEPROM_OFFSET+EPR_INTEGRITY_BYTE) continue;
+        checksum += HAL::eprGetByte(i);
+    }
+    return checksum;
+}
+
+void EEPROM::writeExtruderPrefix(uint pos)
+{
+    if(pos<EEPROM_EXTRUDER_OFFSET || pos>=800) return;
+    int n = (pos-EEPROM_EXTRUDER_OFFSET)/EEPROM_EXTRUDER_LENGTH+1;
+    Com::printF(Com::tExtrDot,n);
+    Com::print(' ');
+}
+
+void EEPROM::writeFloat(uint pos,PGM_P text,uint8_t digits)
+{
+    Com::printF(Com::tEPR3,(int)pos);
+    Com::print(' ');
+    Com::printFloat(HAL::eprGetFloat(pos),digits);
+    Com::print(' ');
+    writeExtruderPrefix(pos);
+    Com::printFLN(text);
+}
+
+void EEPROM::writeLong(uint pos,PGM_P text)
+{
+    Com::printF(Com::tEPR2,(int)pos);
+    Com::print(' ');
+    Com::print(HAL::eprGetInt32(pos));
+    Com::print(' ');
+    writeExtruderPrefix(pos);
+    Com::printFLN(text);
+}
+
+void EEPROM::writeInt(uint pos,PGM_P text)
+{
+    Com::printF(Com::tEPR1,(int)pos);
+    Com::print(' ');
+    Com::print(HAL::eprGetInt16(pos));
+    Com::print(' ');
+    writeExtruderPrefix(pos);
+    Com::printFLN(text);
+}
+
+void EEPROM::writeByte(uint pos,PGM_P text)
+{
+    Com::printF(Com::tEPR0,(int)pos);
+    Com::print(' ');
+    Com::print((int)HAL::eprGetByte(pos));
+    Com::print(' ');
+    writeExtruderPrefix(pos);
+    Com::printFLN(text);
+}
+#endif
 

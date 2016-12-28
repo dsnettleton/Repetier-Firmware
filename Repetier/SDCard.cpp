@@ -12,278 +12,460 @@
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with Foobar.  If not, see <http://www.gnu.org/licenses/>.
+    along with Repetier-Firmware.  If not, see <http://www.gnu.org/licenses/>.
 
     This firmware is a nearly complete rewrite of the sprinter firmware
     by kliment (https://github.com/kliment/Sprinter)
     which based on Tonokip RepRap firmware rewrite based off of Hydra-mmm firmware.
 */
 
-#include "Reptier.h"
+#include "Repetier.h"
 #include "ui.h"
 
 #if SDSUPPORT
 
-#ifndef SD_ALLOW_LONG_NAMES
-#define SD_ALLOW_LONG_NAMES false
-#endif
+char tempLongFilename[LONG_FILENAME_LENGTH+1];
+char fullName[LONG_FILENAME_LENGTH*SD_MAX_FOLDER_DEPTH+SD_MAX_FOLDER_DEPTH+1];
 
 SDCard sd;
 
-SDCard::SDCard() {
-  sdmode = false;
-  sdactive = false;
-  savetosd = false;
+SDCard::SDCard()
+{
+    sdmode = false;
+    sdactive = false;
+    savetosd = false;
+    Printer::setAutomount(false);
     //power to SD reader
 #if SDPOWER > -1
-  SET_OUTPUT(SDPOWER); 
-  WRITE(SDPOWER,HIGH);
+    SET_OUTPUT(SDPOWER);
+    WRITE(SDPOWER,HIGH);
 #endif
 #if defined(SDCARDDETECT) && SDCARDDETECT>-1
-  SET_INPUT(SDCARDDETECT);
-  WRITE(SDCARDDETECT,HIGH);
+    SET_INPUT(SDCARDDETECT);
+    WRITE(SDCARDDETECT,HIGH);
 #endif
 }
-void SDCard::automount() {
+
+void SDCard::automount()
+{
 #if defined(SDCARDDETECT) && SDCARDDETECT>-1
-  if(READ(SDCARDDETECT) != SDCARDDETECTINVERTED) {
-    if(sdactive) { // Card removed
-      sdactive = false;
-      savetosd = false;
-      sdmode = false;
-      UI_STATUS(UI_TEXT_SD_REMOVED);
-      OUT_P_LN(UI_TEXT_SD_REMOVED);
+    if(READ(SDCARDDETECT) != SDCARDDETECTINVERTED)
+    {
+        if(sdactive)   // Card removed
+        {
+            Com::printFLN(PSTR("SD card removed"));
+#if UI_DISPLAY_TYPE!=0
+            uid.executeAction(UI_ACTION_TOP_MENU);
+#endif
+            unmount();
+            UI_STATUS(UI_TEXT_SD_REMOVED);
+        }
     }
-  } else {
-    if(!sdactive) {
-      UI_STATUS(UI_TEXT_SD_INSERTED);
-      OUT_P_LN(UI_TEXT_SD_INSERTED);
-      initsd();
+    else
+    {
+        if(!sdactive)
+        {
+            UI_STATUS(UI_TEXT_SD_INSERTED);
+            Com::printFLN(PSTR("SD card inserted"));
+            Printer::setMenuMode(MENU_MODE_SD_MOUNTED,true);
+            initsd();
+#if UI_DISPLAY_TYPE!=0
+            if(sdactive) {
+                Printer::setAutomount(true);
+                uid.executeAction(UI_ACTION_SD_PRINT+UI_ACTION_TOPMENU);
+            }
+#endif
+        }
     }
-  }
 #endif
 }
-void SDCard::initsd() {
-  sdactive = false;
-  #if SDSS >- 1
+
+void SDCard::initsd()
+{
+    sdactive = false;
+#if SDSS >- 1
     /*if(dir[0].isOpen())
         dir[0].close();*/
-    if(!fat.begin(SDSS,SPI_FULL_SPEED)) {
-        OUT_P_LN("SD init fail");
+    if(!fat.begin(SDSS,SPI_FULL_SPEED))
+    {
+        Com::printFLN(Com::tSDInitFail);
         return;
     }
-    fat.setStdOut(&out);
     sdactive = true;
-  #endif
+    Printer::setMenuMode(MENU_MODE_SD_MOUNTED,true);
+
+    fat.chdir();
+    if(selectFile("init.g",true))
+    {
+        startPrint();
+    }
+#endif
 }
-  
-void SDCard::write_command(GCode *code) {
-     unsigned int sum1=0,sum2=0; // for fletcher-16 checksum
-      byte buf[100];
-      byte p=2;
-      file.writeError = false;
-      int params = 128 | (code->params & ~1);
-      *(int*)buf = params;
-      if(GCODE_IS_V2(code)) { // Read G,M as 16 bit value
-        *(int*)&buf[p] = code->params2;p+=2;
-        if(GCODE_HAS_STRING(code))
-          buf[p++] = strlen(code->text);
-        if(code->params & 2) {*(int*)&buf[p] = code->M;p+=2;}
-        if(code->params & 4) {*(int*)&buf[p]= code->G;p+=2;}
-      } else {
-        if(code->params & 2) {buf[p++] = (byte)code->M;}
-        if(code->params & 4) {buf[p++] = (byte)code->G;}
-      }
-      if(code->params & 8) {*(float*)&buf[p] = code->X;p+=4;}
-      if(code->params & 16) {*(float*)&buf[p] = code->Y;p+=4;}
-      if(code->params & 32) {*(float*)&buf[p] = code->Z;p+=4;}
-      if(code->params & 64) {*(float*)&buf[p] = code->E;p+=4;}
-      if(code->params & 256) {*(float*)&buf[p] = code->F;p+=4;}
-      if(code->params & 512) {buf[p++] = code->T;}
-      if(code->params & 1024) {*(long int*)&buf[p] = code->S;p+=4;}
-      if(code->params & 2048) {*(long int*)&buf[p] = code->P;p+=4;}
-      if(code->params2 & 1) {*(float*)&buf[p] = code->I;p+=4;}
-      if(code->params2 & 2) {*(float*)&buf[p] = code->J;p+=4;}
-      if(GCODE_HAS_STRING(code)) { // read 16 byte into string
-        char *sp = code->text;
-        if(GCODE_IS_V2(code)) {
-          byte i = strlen(code->text);
-          for(;i;i--) buf[p++] = *sp++;
-        } else {
-          for(byte i=0;i<16;++i) buf[p++] = *sp++;
+
+void SDCard::mount()
+{
+    sdmode = false;
+    initsd();
+}
+
+void SDCard::unmount()
+{
+    sdmode = false;
+    sdactive = false;
+    savetosd = false;
+    Printer::setAutomount(false);
+    Printer::setMenuMode(MENU_MODE_SD_MOUNTED+MENU_MODE_SD_PAUSED+MENU_MODE_SD_PRINTING,false);
+#if UI_DISPLAY_TYPE!=0
+    uid.cwd[0]='/';
+    uid.cwd[1]=0;
+    uid.folderLevel=0;
+#endif
+}
+
+void SDCard::startPrint()
+{
+    if(!sdactive) return;
+    sdmode = true;
+    Printer::setMenuMode(MENU_MODE_SD_PRINTING,true);
+    Printer::setMenuMode(MENU_MODE_SD_PAUSED,false);
+}
+
+//##################################################
+//######  THIS IS WHERE THE PAUSE ISSUES WERE AT ###
+
+void SDCard::pausePrint(bool intern)
+{
+    if(!sd.sdactive) return;
+    sdmode = false;
+    Printer::setMenuMode(MENU_MODE_SD_PAUSED,true);
+#if FEATURE_MEMORY_POSITION
+    if(intern) {
+        Commands::waitUntilEndOfAllBuffers();
+		delay(200);
+        Printer::MemoryPosition(); 
+        Printer::moveTo(Printer::destinationSteps[X_AXIS] = 0,Printer::destinationSteps[Y_AXIS] = 0,Printer::zLength,IGNORE_COORDINATE,Printer::homingFeedrate[Z_AXIS]);
+          
+ }
+#endif
+}
+
+void SDCard::continuePrint(bool intern)
+{
+    if(!sd.sdactive) return;
+    Printer::setMenuMode(MENU_MODE_SD_PAUSED,false);
+#if FEATURE_MEMORY_POSITION
+        Printer::GoToMemoryPosition(Printer::memoryX,Printer::memoryY,Printer::memoryZ,false,Printer::homingFeedrate[X_AXIS]);    
+#endif
+    sdmode = true;
+}
+void SDCard::stopPrint()
+{
+    if(!sd.sdactive) return;
+    sdmode = false;
+    Printer::setMenuMode(MENU_MODE_SD_PRINTING,false);
+    Printer::setMenuMode(MENU_MODE_SD_PAUSED,false);
+    Commands::emergencyStop();
+    
+}
+
+void SDCard::writeCommand(GCode *code)
+{
+    unsigned int sum1=0,sum2=0; // for fletcher-16 checksum
+    uint8_t buf[100];
+    uint8_t p=2;
+    file.writeError = false;
+    int params = 128 | (code->params & ~1);
+    *(int*)buf = params;
+    if(code->isV2())   // Read G,M as 16 bit value
+    {
+        *(int*)&buf[p] = code->params2;
+        p+=2;
+        if(code->hasString())
+            buf[p++] = strlen(code->text);
+        if(code->hasM())
+        {
+            *(int*)&buf[p] = code->M;
+            p+=2;
         }
-      }
-      byte *ptr = buf;
-      byte len = p;
-      while (len) {
-        byte tlen = len > 21 ? 21 : len;
+        if(code->hasG())
+        {
+            *(int*)&buf[p]= code->G;
+            p+=2;
+        }
+    }
+    else
+    {
+        if(code->hasM())
+        {
+            buf[p++] = (uint8_t)code->M;
+        }
+        if(code->hasG())
+        {
+            buf[p++] = (uint8_t)code->G;
+        }
+    }
+    if(code->hasX())
+    {
+        *(float*)&buf[p] = code->X;
+        p+=4;
+    }
+    if(code->hasY())
+    {
+        *(float*)&buf[p] = code->Y;
+        p+=4;
+    }
+    if(code->hasZ())
+    {
+        *(float*)&buf[p] = code->Z;
+        p+=4;
+    }
+    if(code->hasE())
+    {
+        *(float*)&buf[p] = code->E;
+        p+=4;
+    }
+    if(code->hasF())
+    {
+        *(float*)&buf[p] = code->F;
+        p+=4;
+    }
+    if(code->hasT())
+    {
+        buf[p++] = code->T;
+    }
+    if(code->hasS())
+    {
+        *(long int*)&buf[p] = code->S;
+        p+=4;
+    }
+    if(code->hasP())
+    {
+        *(long int*)&buf[p] = code->P;
+        p+=4;
+    }
+    if(code->hasI())
+    {
+        *(float*)&buf[p] = code->I;
+        p+=4;
+    }
+    if(code->hasJ())
+    {
+        *(float*)&buf[p] = code->J;
+        p+=4;
+    }
+    if(code->hasString())   // read 16 uint8_t into string
+    {
+        char *sp = code->text;
+        if(code->isV2())
+        {
+            uint8_t i = strlen(code->text);
+            for(; i; i--) buf[p++] = *sp++;
+        }
+        else
+        {
+            for(uint8_t i=0; i<16; ++i) buf[p++] = *sp++;
+        }
+    }
+    uint8_t *ptr = buf;
+    uint8_t len = p;
+    while (len)
+    {
+        uint8_t tlen = len > 21 ? 21 : len;
         len -= tlen;
-        do {
-          sum1 += *ptr++;
-          if(sum1>=255) sum1-=255;
-          sum2 += sum1;
-          if(sum2>=255) sum2-=255;
-        } while (--tlen);
-      }
-      buf[p++] = sum1;
-      buf[p++] = sum2;
-      file.write(buf,p);
-      if (file.writeError){
-          OUT_P_LN("error writing to file");
-      }
+        do
+        {
+            sum1 += *ptr++;
+            if(sum1>=255) sum1-=255;
+            sum2 += sum1;
+            if(sum2>=255) sum2-=255;
+        }
+        while (--tlen);
+    }
+    buf[p++] = sum1;
+    buf[p++] = sum2;
+    if(params == 128)
+    {
+        Com::printErrorFLN(Com::tAPIDFinished);
+    }
+    else
+        file.write(buf,p);
+    if (file.writeError)
+    {
+        Com::printFLN(Com::tErrorWritingToFile);
+    }
 }
+
 char *SDCard::createFilename(char *buffer,const dir_t &p)
 {
-  char *pos = buffer,*src = (char*)p.name;
-  for (byte i = 0; i < 11; i++,src++) 
-  {   
-    if (*src == ' ') continue;
-    if (i == 8) 
-      *pos++ = '.';
-    *pos++ = *src;
-  }
-  *pos = 0;
-  return pos;
-}
-bool SDCard::showFilename(const uint8_t *name) {
-  if (*name == DIR_NAME_DELETED || *name == '.') return false;
-#if !SD_ALLOW_LONG_NAMES
-  byte i=11;
-  while(i--) {
-     if(*name=='~') return false;
-     name++;
-  }
-#endif
-  return true; 
-}
-void  SDCard::lsRecursive(SdBaseFile *parent,byte level)
-{
-  dir_t *p;
-  uint8_t cnt=0;
-  char *oldpathend = pathend;
-  char filename[13];
-  parent->rewind();
-  while ((p= parent->readDirCache()))
-  {
-    if (p->name[0] == DIR_NAME_FREE) break;
-    if (!showFilename(p->name)) continue;
-    if (!DIR_IS_FILE_OR_SUBDIR(p)) continue;
-    if( DIR_IS_SUBDIR(p))
+    char *pos = buffer,*src = (char*)p.name;
+    for (uint8_t i = 0; i < 11; i++,src++)
     {
-      if(level>=SD_MAX_FOLDER_DEPTH) continue; // can't go deeper
-      if(level<SD_MAX_FOLDER_DEPTH) {
-        createFilename(filename,*p);
-        if(level) {
-          out.print(fullName);
-          out.print('/');
-        }
-        out.print(filename);
-        out.println('/'); //End with / to mark it as directory entry, so we can see empty directories.
-      }
-      char *tmp = oldpathend;
-      if(level) *tmp++ = '/';
-      char *dirname = tmp;
-      pathend = createFilename(tmp,*p);
-      SdBaseFile next;
-      uint16_t index = parent->curPosition()/32 - 1;
-      if(next.open(parent,dirname, O_READ))
-        lsRecursive(&next,level+1);
-      parent->seekSet(32 * (index + 1));
-      *oldpathend = 0;
-    } else {
-      createFilename(filename,*p);
-      if(level) {
-        out.print(fullName);
-        out.print('/');
-      }
-      out.print(filename);
-#ifdef SD_EXTENDED_DIR
-      out.write(' ');
-      out.print(p->fileSize);
-#endif
-      out.println();
+        if (*src == ' ') continue;
+        if (i == 8)
+            *pos++ = '.';
+        *pos++ = *src;
     }
-  }
-}
-void SDCard::ls() {
-  OUT_P_LN("Begin file list");
-  *fullName = 0;
-  pathend = fullName;
-  fat.chdir();
-  lsRecursive(fat.vwd(),0);
-  OUT_P_LN("End file list");
+    *pos = 0;
+    return pos;
 }
 
-void SDCard::selectFile(char *filename) {
-  if(!sdactive) return;
-  sdmode = false;
-  file.close();
-  fat.chdir();
-  if (file.open(fat.vwd(),filename, O_READ)) {
-    OUT_P("File opened:");
-    out.print(filename);
-    OUT_P_L_LN(" Size:",file.fileSize());
-    sdpos = 0;
-    filesize = file.fileSize();
-    OUT_P_LN("File selected");
-  } else {
-    OUT_P_LN("file.open failed");
-  }
+bool SDCard::showFilename(const uint8_t *name)
+{
+    if (*name == DIR_NAME_DELETED || *name == '.') return false;
+    return true;
 }
-void SDCard::printStatus() {
-  if(sdactive){
-    OUT_P_L("SD printing byte ",sdpos);
-    OUT_P_L_LN("/",filesize);
-  } else {
-    OUT_P_LN("Not SD printing");
-  }
+
+int8_t RFstricmp(const char* s1, const char* s2)
+{
+    while(*s1 && (tolower(*s1) == tolower(*s2)))
+        s1++,s2++;
+    return (const uint8_t)tolower(*s1)-(const uint8_t)tolower(*s2);
 }
-void SDCard::startWrite(char *filename) {
-  if(!sdactive) return;
-  file.close();
-  sdmode = false;
-  fat.chdir();
-  if(!file.open(filename, O_CREAT | O_APPEND | O_WRITE | O_TRUNC))  {
-    OUT_P("open failed, File: ");
-    out.print(filename);
-    out.print('.');
-  } else {
-    UI_STATUS(UI_TEXT_UPLOADING);
-    savetosd = true;
-    OUT_P("Writing to file: ");
-    out.println(filename);
-  }
+int8_t RFstrnicmp(const char* s1, const char* s2, size_t n)
+{
+    while(n--)
+    {
+        if(tolower(*s1)!=tolower(*s2))
+            return (uint8_t)tolower(*s1) - (uint8_t)tolower(*s2);
+        s1++;
+        s2++;
+    }
+    return 0;
 }
-void SDCard::finishWrite() {
-  if(!savetosd) return; // already closed or never opened
-  file.sync();
-  file.close();
-  savetosd = false;
-  OUT_P_LN("Done saving file.");
-  UI_CLEAR_STATUS;
+
+
+void SDCard::ls()
+{
+    SdBaseFile file;
+
+    Com::printFLN(Com::tBeginFileList);
+    fat.chdir();
+
+    file.openRoot(fat.vol());
+    file.ls(0, 0);
+    Com::printFLN(Com::tEndFileList);
 }
-void SDCard::deleteFile(char *filename) {
-  if(!sdactive) return;
-  sdmode = false;
-  file.close();
-  if(fat.remove(filename)) {
-    OUT_P_LN("File deleted");
-  } else {
-    if(fat.rmdir(filename))
-      OUT_P_LN("File deleted");
+
+bool SDCard::selectFile(char *filename, bool silent)
+{
+    SdBaseFile parent;
+    char *oldP = filename;
+    boolean bFound;
+
+    if(!sdactive) return false;
+    sdmode = false;
+
+    file.close();
+
+    parent = *fat.vwd();
+    if (file.open(&parent, filename, O_READ))
+      {
+      if ((oldP = strrchr(filename, '/')) != NULL)
+          oldP++;
+      else
+          oldP = filename;
+
+        if(!silent)
+        {
+            Com::printF(Com::tFileOpened, oldP);
+            Com::printFLN(Com::tSpaceSizeColon,file.fileSize());
+        }
+        sdpos = 0;
+        filesize = file.fileSize();
+        Com::printFLN(Com::tFileSelected);
+        return true;
+    }
     else
-      OUT_P_LN("Deletion failed");
-  }
+    {
+        if(!silent)
+            Com::printFLN(Com::tFileOpenFailed);
+        return false;
+    }
 }
-void SDCard::makeDirectory(char *filename) {
-  if(!sdactive) return;
-  sdmode = false;
-  file.close();
-  if(fat.mkdir(filename)) {
-    OUT_P_LN("Directory created");    
-  } else {
-    OUT_P_LN("Creation failed");
-  }
+
+void SDCard::printStatus()
+{
+    if(sdactive)
+    {
+        Com::printF(Com::tSDPrintingByte,sdpos);
+        Com::printFLN(Com::tSlash,filesize);
+    }
+    else
+    {
+        Com::printFLN(Com::tNotSDPrinting);
+    }
 }
+void SDCard::startWrite(char *filename)
+{
+    if(!sdactive) return;
+    file.close();
+    sdmode = false;
+    fat.chdir();
+    if(!file.open(filename, O_CREAT | O_APPEND | O_WRITE | O_TRUNC))
+    {
+        Com::printFLN(Com::tOpenFailedFile,filename);
+    }
+    else
+    {
+        UI_STATUS(UI_TEXT_UPLOADING);
+        savetosd = true;
+        Com::printFLN(Com::tWritingToFile,filename);
+    }
+}
+void SDCard::finishWrite()
+{
+    if(!savetosd) return; // already closed or never opened
+    file.sync();
+    file.close();
+    savetosd = false;
+    Com::printFLN(Com::tDoneSavingFile);
+    UI_CLEAR_STATUS;
+}
+void SDCard::deleteFile(char *filename)
+{
+    if(!sdactive) return;
+    sdmode = false;
+    file.close();
+    if(fat.remove(filename))
+    {
+        Com::printFLN(Com::tFileDeleted);
+    }
+    else
+    {
+        if(fat.rmdir(filename))
+            Com::printFLN(Com::tFileDeleted);
+        else
+            Com::printFLN(Com::tDeletionFailed);
+    }
+}
+void SDCard::makeDirectory(char *filename)
+{
+    if(!sdactive) return;
+    sdmode = false;
+    file.close();
+    if(fat.mkdir(filename))
+    {
+        Com::printFLN(Com::tDirectoryCreated);
+    }
+    else
+    {
+        Com::printFLN(Com::tCreationFailed);
+    }
+}
+
+#ifdef GLENN_DEBUG
+void SDCard::writeToFile()
+{
+  size_t nbyte;
+  char szName[10];
+
+  strcpy(szName, "Testing\r\n");
+  nbyte = file.write(szName, strlen(szName));
+  Com::print("L=");
+  Com::print((long)nbyte);
+  Com::println();
+}
+
 #endif
 
+#endif
